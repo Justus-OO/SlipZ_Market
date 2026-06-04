@@ -56,18 +56,27 @@ const AdminDashboard = () => {
 
     try {
       const response = await fetch(`/api/admin/dashboard?range=${timeRange}`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } // Add token if using Auth middleware
+        headers: { 
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+          'Content-Type': 'application/json'
+        }
       });
-      const { data } = await response.json();
       
-      if (data) {
-        // Map backend string icons to Lucide components safely
-        setKpis(data.kpis.map(k => ({ ...k, icon: ICON_MAP[k.icon] || Activity })));
-        setSystemHealth(data.systemHealth.map(s => ({ ...s, icon: ICON_MAP[s.icon] || Server })));
-        setChartData(data.chart);
-        setActivities(data.activities);
+      if (!response.ok) throw new Error('Network response was not ok');
+      
+      const { data, success, message } = await response.json();
+      
+      if (success && data) {
+        // Map backend string icons to Lucide components safely, with fallbacks
+        setKpis(data.kpis?.map(k => ({ ...k, icon: ICON_MAP[k.icon] || Activity })) || []);
+        setSystemHealth(data.systemHealth?.map(s => ({ ...s, icon: ICON_MAP[s.icon] || Server })) || []);
+        setChartData(data.chart || []);
+        setActivities(data.activities || []);
+        
         setLastSync(new Date().toLocaleTimeString());
         if (isManualRefresh) showToast('Dashboard data synced successfully.');
+      } else {
+        throw new Error(message || 'Failed to parse payload');
       }
     } catch (error) {
       console.error("Failed to fetch dashboard data:", error);
@@ -91,6 +100,8 @@ const AdminDashboard = () => {
   };
 
   const handleExportCSV = () => {
+    if (chartData.length === 0) return showToast('No data available to export.', 'error');
+
     const headers = ['Period', 'Relative Volume'];
     const rows = chartData.map(data => [data.label, data.value]);
     const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
@@ -114,21 +125,25 @@ const AdminDashboard = () => {
     try {
       const res = await fetch('/api/admin/dashboard/announcement', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
         body: JSON.stringify({ message: announcementText })
       });
       const result = await res.json();
       
       if (result.success) {
-        showToast(`Announcement sent to ${result.message.split(' ')[3]} users.`);
+        // Extract the count from the success message if needed, or just show the message
+        showToast(result.message);
         setIsAnnouncementModalOpen(false);
         setAnnouncementText('');
-        fetchDashboardData(false); // Refresh logs
+        fetchDashboardData(false); // Refresh logs so the broadcast shows in Activity
       } else {
         throw new Error(result.message);
       }
     } catch (err) {
-      showToast('Failed to broadcast announcement.', 'error');
+      showToast(err.message || 'Failed to broadcast announcement.', 'error');
     }
   };
 
@@ -139,16 +154,20 @@ const AdminDashboard = () => {
       const confirmBan = window.confirm('Are you sure you want to suspend this user?');
       if (confirmBan) {
         try {
-          // You will need to extract the actual USER ID from the activity log if available, 
-          // or modify the backend to accept the activity ID to trace back to the user.
-          // Assuming 'id' here is the User ID for demonstration:
-          const res = await fetch(`/api/admin/dashboard/users/${id}/suspend`, { method: 'POST' });
-          if(res.ok) {
+          const res = await fetch(`/api/admin/dashboard/users/${id}/suspend`, { 
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` }
+          });
+          const result = await res.json();
+          
+          if(res.ok && result.success) {
             showToast('User account suspended.');
-            fetchDashboardData(false);
+            fetchDashboardData(false); // Sync table to show new status
+          } else {
+            throw new Error(result.message);
           }
         } catch (err) {
-          showToast('Failed to suspend user.', 'error');
+          showToast(err.message || 'Failed to suspend user.', 'error');
         }
       }
     } else if (actionType === 'revert') {
@@ -169,12 +188,14 @@ const AdminDashboard = () => {
 
   // Memoized Search Filter
   const filteredActivity = useMemo(() => {
+    if (!activities) return [];
     return activities.filter(log => 
       log.user.toLowerCase().includes(activitySearch.toLowerCase()) || 
       log.action.toLowerCase().includes(activitySearch.toLowerCase())
     );
   }, [activities, activitySearch]);
 
+  // Loading Screen Match
   if (isLoading) {
     return (
       <div className="flex flex-col h-full min-h-screen bg-app font-sans items-center justify-center">
@@ -265,7 +286,7 @@ const AdminDashboard = () => {
             <div key={i} className="bg-white border border-[#d6c9b8] rounded-2xl p-6 shadow-sm hover:border-[#8b6f5a] transition-colors relative overflow-hidden group">
               <div className="flex justify-between items-start mb-4">
                 <div className="w-10 h-10 bg-[#faf6f0] rounded-xl flex items-center justify-center border border-[#d6c9b8] group-hover:bg-[#8b6f5a] group-hover:text-white transition-colors text-[#8b6f5a]">
-                  <stat.icon size={20} />
+                  {stat.icon && <stat.icon size={20} />}
                 </div>
                 <div className={`flex items-center gap-1 text-[12px] font-bold px-2 py-1 rounded-full ${stat.isUp ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
                   {stat.isUp ? <ArrowUpRight size={12}/> : <ArrowDownRight size={12}/>}
@@ -316,7 +337,7 @@ const AdminDashboard = () => {
                       </div>
                       <div 
                         className="w-3/4 bg-[#d6c9b8] group-hover:bg-[#8b6f5a] rounded-t-md transition-all duration-500"
-                        style={{ height: `${data.value}%` }}
+                        style={{ height: `${Math.max(data.value, 5)}%` }} /* Ensure minimum height for visibility */
                       />
                     </div>
                     <span className="text-[11px] font-bold text-[#8b6f5a] uppercase truncate w-full text-center">{data.label}</span>
@@ -338,7 +359,7 @@ const AdminDashboard = () => {
                 <div key={i} className="p-3 border border-[#d6c9b8] bg-[#faf6f0] rounded-xl flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg ${sys.status === 'Operational' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                      <sys.icon size={16} />
+                      {sys.icon && <sys.icon size={16} />}
                     </div>
                     <div>
                       <p className="text-[13px] font-bold text-[#3b2a23]">{sys.service}</p>
