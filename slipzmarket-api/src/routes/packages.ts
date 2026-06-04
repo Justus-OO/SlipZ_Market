@@ -83,7 +83,14 @@ router.post('/', requireAuth, requireAdmin, CoreService.catchAsync(async (req: R
   const existing = await prisma.package.findUnique({ where: { id: validation.data.id } });
   if (existing) return CoreService.error(res, 400, 'A package with this ID already exists.');
 
-  const newPackage = await prisma.package.create({ data: validation.data });
+const newPackage = await prisma.package.create({ 
+    data: {
+      ...validation.data,
+      // Force these to be numbers to satisfy Prisma's strict requirements
+      leadsCount: Number(validation.data.leadsCount || 0),
+      price: Number(validation.data.price || 0)
+    } 
+  });
   return CoreService.success(res, 201, 'Package created successfully', { package: newPackage });
 }));
 

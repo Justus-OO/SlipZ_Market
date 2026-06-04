@@ -131,7 +131,7 @@ router.post('/upsert', requireAuth, requireAdmin, CoreService.catchAsync(async (
 // 3. Download PDF Endpoint (Optimized via HTTP Streaming)
 router.get('/download/:id', requireAuth, requireAdmin, CoreService.catchAsync(async (req: Request, res: Response) => {
   const invoice = await prisma.invoice.findUnique({ 
-    where: { id: req.params.id },
+    where: { id: req.params.id as string },
     include: { items: true, workspace: true } 
   });
   
@@ -143,7 +143,7 @@ router.get('/download/:id', requireAuth, requireAdmin, CoreService.catchAsync(as
 
 // 4. Delete Invoice
 router.delete('/:id', requireAuth, requireAdmin, CoreService.catchAsync(async (req: Request, res: Response) => {
-  await prisma.invoice.delete({ where: { id: req.params.id } });
+  await prisma.invoice.delete({ where: { id: req.params.id as string } });
   return CoreService.success(res, 200, 'Invoice deleted');
 }));
 

@@ -75,16 +75,16 @@ router.post('/stripe', express.raw({ type: 'application/json' }), async (req: Re
         return res.json({ received: true, status: 'duplicate_skipped' });
       }
 
-      // 3. Generate PDF and Send Email for NEW orders
-      const { invoice, receiptData } = result;
+const invoice = (result as any).invoice;
+      const receiptData = (result as any).receiptData;
       
       if (receiptData?.email) {
-        const tempDir = path.join(process.cwd(), 'temp');
-        if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+        // const tempDir = path.join(process.cwd(), 'temp');
+        // if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
         
-        const pdfPath = path.join(tempDir, `INV-${invoice.id}.pdf`);
+        // const pdfPath = path.join(tempDir, `INV-${invoice.id}.pdf`);
         
-        await PDFGenerator.generateInvoice(invoice, pdfPath);
+        // await PDFGenerator.generateInvoice(invoice, pdfPath);
         
         await MailerService.send({
           to: receiptData.email,
@@ -94,10 +94,10 @@ router.post('/stripe', express.raw({ type: 'application/json' }), async (req: Re
             invoiceId: invoice.id, 
             total: invoice.amount.toFixed(2) 
           },
-          attachments: [{ filename: `Receipt-${invoice.id}.pdf`, path: pdfPath }]
+         // attachments: [{ filename: `Receipt-${invoice.id}.pdf`, path: pdfPath }]
         });
         
-        if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
+        //if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
         console.log(`📧 Receipt successfully emailed to ${receiptData.email}`);
       }
 

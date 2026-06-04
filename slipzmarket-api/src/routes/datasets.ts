@@ -34,7 +34,7 @@ const ownedDatasets = invoices
       date: inv.date, // 👈 UPDATED: Changed from inv.createdAt to inv.date
       leadsCount: inv._count?.unlockedLeads || 0,
       description: inv.description || 'Custom Data Export',
-      filters: inv.queryCriteria || {} 
+      filters: (inv as any).queryCriteria || {} 
     }));
   return CoreService.success(res, 200, 'Datasets fetched', { datasets: ownedDatasets });
 }));
