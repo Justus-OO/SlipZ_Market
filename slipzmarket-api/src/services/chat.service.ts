@@ -65,16 +65,47 @@ export const ChatEngineService = {
     });
 
     // 4. Check if human is already handling
-    if (session.status !== ChatStatus.BOT_HANDLING) {
-      // Just save it and broadcast to the agent, the bot doesn't reply
-      SocketService.notifyAdmins(session.id, 'new_message', {
+    if (session.status !== 'BOT_HANDLING') {
+      
+      // A. Reset inactivity trackers because the user just replied
+      if (session.reminderSent) {
+        await prisma.chatSession.update({
+          where: { id: session.id },
+          data: { 
+            reminderSent: false, 
+            updatedAt: new Date() 
+          }
+        });
+      }
+
+      // B. Construct a clean, predictable payload for the frontend
+      const messagePayload = {
         sessionId: session.id,
-        id: savedUserMsg.id,
-        text: savedUserMsg.text,
-        senderRole: 'USER',
-        createdAt: savedUserMsg.createdAt
-      });
-      return { session, botResponse: null, escalated: true };
+        workspaceId: session.workspaceId,
+        message: {
+          id: savedUserMsg.id,
+          text: savedUserMsg.text,
+          senderRole: savedUserMsg.senderRole,
+          createdAt: savedUserMsg.createdAt,
+          isStarred: savedUserMsg.isStarred || false
+        }
+      };
+
+      // C. Smart Routing: EXACT ARGUMENT MATCHING
+      if (session.agentId) {
+        // notifyUser expects 3 arguments: (sessionId/userId, eventName, payload)
+        SocketService.notifyUser(session.agentId, 'new_message', messagePayload);
+      } else {
+        // notifyAdmins expects 2 arguments: (eventName, payload)
+        SocketService.notifyAdmins('new_message', messagePayload);
+      }
+
+      // Return early so the AI bot does not generate a response
+      return { 
+        session, 
+        botResponse: null, 
+        escalated: true 
+      };
     }
 
     // 5. Filter history for AI context
@@ -104,6 +135,7 @@ export const ChatEngineService = {
         
         await this.sendBotMessage(session.id, "I want to make sure you get the best help possible. I am connecting you with a human support agent now.");
         
+        // notifyAdmins expects 2 arguments: (eventName, payload)
         SocketService.notifyAdmins('new_escalation', {
           sessionId: session.id,
           user: session.user,
