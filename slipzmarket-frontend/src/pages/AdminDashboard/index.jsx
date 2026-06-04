@@ -7,100 +7,40 @@ import {
   ArrowDownRight, Calendar, Bell, Mail, Phone,
   Server, ShieldCheck, Zap, Megaphone, UserCog, 
   BarChart2, Globe, Lock, Search, Filter,
-  X, Send, Eye, RefreshCw, Ban, Loader2
+  X, Send, Eye, RefreshCw, Ban, Loader2, FileText, Check
 } from 'lucide-react';
 
-// --- DYNAMIC DATA MAPPINGS ---
-const DATA_BY_RANGE = {
-  '24H': {
-    kpis: [
-      { label: 'Revenue (24H)', value: '£4,250.00', trend: '+2.1%', isUp: true, icon: DollarSign },
-      { label: 'Active Workspaces', value: '342', trend: '+1.5%', isUp: true, icon: Users },
-      { label: 'Datasets Exported', value: '128', trend: '-0.5%', isUp: false, icon: Database },
-      { label: 'Support Tickets', value: '2', trend: '0.0%', isUp: true, icon: AlertTriangle },
-    ],
-    chart: [
-      { label: '00:00', value: 20 }, { label: '04:00', value: 15 }, 
-      { label: '08:00', value: 45 }, { label: '12:00', value: 80 }, 
-      { label: '16:00', value: 65 }, { label: '20:00', value: 50 }, 
-      { label: 'Now', value: 35 }
-    ]
-  },
-  '7D': {
-    kpis: [
-      { label: 'Revenue (7D)', value: '£28,400.00', trend: '+8.4%', isUp: true, icon: DollarSign },
-      { label: 'Active Workspaces', value: '890', trend: '+4.2%', isUp: true, icon: Users },
-      { label: 'Datasets Exported', value: '945', trend: '+15.2%', isUp: true, icon: Database },
-      { label: 'Support Tickets', value: '14', trend: '-2.4%', isUp: false, icon: AlertTriangle },
-    ],
-    chart: [
-      { label: 'Mon', value: 45 }, { label: 'Tue', value: 52 }, 
-      { label: 'Wed', value: 38 }, { label: 'Thu', value: 65 }, 
-      { label: 'Fri', value: 78 }, { label: 'Sat', value: 30 }, 
-      { label: 'Sun', value: 40 }
-    ]
-  },
-  '30D': {
-    kpis: [
-      { label: 'Revenue (30D)', value: '£124,500.00', trend: '+14.5%', isUp: true, icon: DollarSign },
-      { label: 'Active Workspaces', value: '1,284', trend: '+5.2%', isUp: true, icon: Users },
-      { label: 'Datasets Exported', value: '8,432', trend: '+12.1%', isUp: true, icon: Database },
-      { label: 'Support Tickets', value: '45', trend: '+1.1%', isUp: false, icon: AlertTriangle },
-    ],
-    chart: [
-      { label: 'Week 1', value: 60 }, { label: 'Week 2', value: 75 }, 
-      { label: 'Week 3', value: 65 }, { label: 'Week 4', value: 90 }
-    ]
-  },
-  'YTD': {
-    kpis: [
-      { label: 'Revenue (YTD)', value: '£845,200.00', trend: '+24.5%', isUp: true, icon: DollarSign },
-      { label: 'Active Workspaces', value: '3,450', trend: '+18.2%', isUp: true, icon: Users },
-      { label: 'Datasets Exported', value: '45,210', trend: '+32.1%', isUp: true, icon: Database },
-      { label: 'Support Tickets', value: '312', trend: '-5.4%', isUp: true, icon: AlertTriangle },
-    ],
-    chart: [
-      { label: 'Jan', value: 45 }, { label: 'Feb', value: 52 }, 
-      { label: 'Mar', value: 38 }, { label: 'Apr', value: 65 }, 
-      { label: 'May', value: 78 }, { label: 'Jun', value: 85 }, 
-      { label: 'Jul', value: 100 }
-    ]
-  }
+// Map string icon names from the backend to actual Lucide components
+const ICON_MAP = {
+  DollarSign, Users, Database, AlertTriangle, Server, Mail, Zap, Activity
 };
-
-const INITIAL_ACTIVITY = [
-  { id: 'ACT-01', user: 'alex@acmecorp.com', action: 'Purchased 10k Email Leads', time: '10 mins ago', amount: 1125.00, status: 'Completed' },
-  { id: 'ACT-02', user: 'sarah@fintech.io', action: 'Requested Refund (INV-088)', time: '45 mins ago', amount: 1350.00, status: 'Pending Review' },
-  { id: 'ACT-03', user: 'james@startup.co', action: 'Added £500.00 to Wallet', time: '2 hours ago', amount: 500.00, status: 'Completed' },
-  { id: 'ACT-04', user: 'system_auto', action: 'Dataset Sync: NA Healthcare', time: '5 hours ago', amount: null, status: 'System' },
-  { id: 'ACT-05', user: 'mike@global.net', action: 'Exported 400 Phone Leads', time: '1 day ago', amount: 200.00, status: 'Completed' },
-];
-
-const SYSTEM_HEALTH = [
-  { service: 'Main API Gateway', status: 'Operational', uptime: '99.99%', icon: Server },
-  { service: 'SMTP Validation Engine', status: 'Operational', uptime: '99.95%', icon: Mail },
-  { service: 'Payment Processor', status: 'Degraded', uptime: '98.50%', icon: DollarSign },
-  { service: 'Data Enrichment Sync', status: 'Operational', uptime: '100%', icon: Zap },
-];
 
 const AdminDashboard = () => {
   const { t } = useTranslation();
-  // --- CORE STATE ---
+  
+  // --- CORE STATE (Connected to Backend) ---
   const [timeRange, setTimeRange] = useState('7D');
+  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSync, setLastSync] = useState(new Date().toLocaleTimeString());
   const [activitySearch, setActivitySearch] = useState('');
-  const [activities, setActivities] = useState(INITIAL_ACTIVITY);
+  
+  // Data States
+  const [kpis, setKpis] = useState([]);
+  const [chartData, setChartData] = useState([]);
+  const [activities, setActivities] = useState([]);
+  const [systemHealth, setSystemHealth] = useState([]);
 
-  // --- INTERACTIVE STATE ---
+  // --- MODAL STATES ---
   const [activeMenuId, setActiveMenuId] = useState(null);
+  const [toast, setToast] = useState(null);
+  
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
   const [announcementText, setAnnouncementText] = useState('');
-  const [toast, setToast] = useState(null);
-
-  // Derive Data based on Time Range
-  const currentKPIs = DATA_BY_RANGE[timeRange].kpis;
-  const currentChart = DATA_BY_RANGE[timeRange].chart;
+  
+  const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
+  const [isTaxModalOpen, setIsTaxModalOpen] = useState(false);
+  const [isRegionModalOpen, setIsRegionModalOpen] = useState(false);
 
   // --- CLICK OUTSIDE LISTENER ---
   useEffect(() => {
@@ -109,35 +49,52 @@ const AdminDashboard = () => {
     return () => window.removeEventListener('click', handleOutsideClick);
   }, []);
 
+  // --- API DATA FETCHING ---
+  const fetchDashboardData = async (isManualRefresh = false) => {
+    if (isManualRefresh) setIsRefreshing(true);
+    else setIsLoading(true);
+
+    try {
+      const response = await fetch(`/api/admin/dashboard?range=${timeRange}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } // Add token if using Auth middleware
+      });
+      const { data } = await response.json();
+      
+      if (data) {
+        // Map backend string icons to Lucide components safely
+        setKpis(data.kpis.map(k => ({ ...k, icon: ICON_MAP[k.icon] || Activity })));
+        setSystemHealth(data.systemHealth.map(s => ({ ...s, icon: ICON_MAP[s.icon] || Server })));
+        setChartData(data.chart);
+        setActivities(data.activities);
+        setLastSync(new Date().toLocaleTimeString());
+        if (isManualRefresh) showToast('Dashboard data synced successfully.');
+      }
+    } catch (error) {
+      console.error("Failed to fetch dashboard data:", error);
+      showToast('Failed to sync data. Check connection.', 'error');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  // Re-fetch when timeRange changes
+  useEffect(() => {
+    fetchDashboardData();
+  }, [timeRange]);
+
+
   // --- FUNCTIONAL HANDLERS ---
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    // Simulate fetching new data
-    setTimeout(() => {
-      setIsRefreshing(false);
-      setLastSync(new Date().toLocaleTimeString());
-      setActivities([
-        { id: `ACT-NEW-${Math.floor(Math.random()*100)}`, user: 'new_user@domain.com', action: 'Logged in', time: 'Just now', amount: null, status: 'System' },
-        ...activities
-      ]);
-      showToast('Dashboard data synced successfully.');
-    }, 1200);
-  };
-
   const handleExportCSV = () => {
-    // Generate actual CSV string
     const headers = ['Period', 'Relative Volume'];
-    const rows = currentChart.map(data => [data.label, data.value]);
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + headers.join(",") + "\n" 
-      + rows.map(e => e.join(",")).join("\n");
+    const rows = chartData.map(data => [data.label, data.value]);
+    const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
       
-    // Trigger browser download
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -149,35 +106,65 @@ const AdminDashboard = () => {
     showToast('Report downloaded successfully.');
   };
 
-  const handleSendAnnouncement = (e) => {
+  // API Call: Send Announcement
+  const handleSendAnnouncement = async (e) => {
     e.preventDefault();
     if (!announcementText.trim()) return;
-    setIsAnnouncementModalOpen(false);
-    setAnnouncementText('');
-    showToast('Global announcement broadcasted to all active users.');
+    
+    try {
+      const res = await fetch('/api/admin/dashboard/announcement', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: announcementText })
+      });
+      const result = await res.json();
+      
+      if (result.success) {
+        showToast(`Announcement sent to ${result.message.split(' ')[3]} users.`);
+        setIsAnnouncementModalOpen(false);
+        setAnnouncementText('');
+        fetchDashboardData(false); // Refresh logs
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (err) {
+      showToast('Failed to broadcast announcement.', 'error');
+    }
   };
 
-  const handleGenerateTaxReport = () => {
-    showToast('Compiling fiscal tax report...', 'loading');
-    setTimeout(() => {
-      showToast('Tax report generated and sent to admin email.');
-    }, 2000);
-  };
-
-  const handleRowAction = (actionType, id) => {
+  // API Call: Suspend User
+  const handleRowAction = async (actionType, id) => {
     setActiveMenuId(null);
     if (actionType === 'ban') {
       const confirmBan = window.confirm('Are you sure you want to suspend this user?');
       if (confirmBan) {
-        setActivities(activities.filter(a => a.id !== id));
-        showToast('User account suspended.');
+        try {
+          // You will need to extract the actual USER ID from the activity log if available, 
+          // or modify the backend to accept the activity ID to trace back to the user.
+          // Assuming 'id' here is the User ID for demonstration:
+          const res = await fetch(`/api/admin/dashboard/users/${id}/suspend`, { method: 'POST' });
+          if(res.ok) {
+            showToast('User account suspended.');
+            fetchDashboardData(false);
+          }
+        } catch (err) {
+          showToast('Failed to suspend user.', 'error');
+        }
       }
     } else if (actionType === 'revert') {
-      setActivities(activities.map(a => a.id === id ? { ...a, status: 'Reverted' } : a));
-      showToast('Action reverted successfully.');
+       showToast('Action revert requires system admin override.', 'error');
     } else {
       showToast('Fetching complete audit trail for this event...');
     }
+  };
+
+  const handleGenerateTaxReport = (e) => {
+    e.preventDefault();
+    setIsTaxModalOpen(false);
+    showToast('Compiling fiscal tax report...', 'loading');
+    setTimeout(() => {
+      showToast('Tax report generated and sent to admin email.');
+    }, 2000);
   };
 
   // Memoized Search Filter
@@ -188,16 +175,25 @@ const AdminDashboard = () => {
     );
   }, [activities, activitySearch]);
 
+  if (isLoading) {
+    return (
+      <div className="flex flex-col h-full min-h-screen bg-app font-sans items-center justify-center">
+        <Loader2 size={40} className="animate-spin text-[#8b6f5a] mb-4" />
+        <p className="text-[#3b2a23] font-bold">Loading Dashboard Assets...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full min-h-screen bg-app font-sans pb-16 selection:bg-accent selection:text-surface relative">
       
       {/* --- DASHBOARD HEADER --- */}
-      <div className="bg-surface border-b border-theme px-0 md:px-0 py-6 sticky top-0 z-30 shadow-sm">
+      <div className="bg-surface border-b border-theme px-6 py-6 sticky top-0 z-30 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 w-full">
           <div className="flex items-center gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-primary tracking-tight">{t('adminOverviewTitle')}</h1>
-              <p className="text-[14px] text-muted font-medium mt-1">{t('adminOverviewSubtitle')}</p>
+              <h1 className="text-2xl font-bold text-primary tracking-tight">{t('adminOverviewTitle', 'Admin Control Center')}</h1>
+              <p className="text-[14px] text-muted font-medium mt-1">{t('adminOverviewSubtitle', 'Real-time overview & infrastructure management')}</p>
             </div>
           </div>
 
@@ -210,16 +206,16 @@ const AdminDashboard = () => {
                 <button 
                   key={range}
                   onClick={() => setTimeRange(range)}
-                  className={`px-4 py-1.5 rounded-md text-[13px] font-bold transition-all ${timeRange === range ? 'bg-surface shadow-sm text-primary border border-theme' : 'text-muted hover:text-primary'}`}
+                  className={`px-4 py-1.5 rounded-md text-[13px] font-bold transition-all ${timeRange === range ? 'bg-[#faf6f0] shadow-sm text-[#3b2a23] border border-[#d6c9b8]' : 'text-[#8b6f5a] hover:text-[#3b2a23]'}`}
                 >
                   {range}
                 </button>
               ))}
             </div>
             <button 
-              onClick={handleRefresh}
+              onClick={() => fetchDashboardData(true)}
               disabled={isRefreshing}
-              className="flex items-center gap-2 bg-accent hover:bg-accent text-surface px-4 py-2.5 rounded-lg shadow-sm text-[14px] font-bold transition-all disabled:opacity-70"
+              className="flex items-center gap-2 bg-[#8b6f5a] hover:bg-[#6c5544] text-white px-4 py-2.5 rounded-lg shadow-sm text-[14px] font-bold transition-all disabled:opacity-70"
             >
               <Activity size={16} className={isRefreshing ? "animate-spin" : ""} /> 
               {isRefreshing ? 'Syncing...' : 'Sync Data'}
@@ -229,7 +225,7 @@ const AdminDashboard = () => {
       </div>
 
       {/* --- MAIN CONTENT GRID --- */}
-      <div className="px-0 mt-8 w-full flex flex-col gap-8">
+      <div className="px-6 mt-8 w-full flex flex-col gap-8">
 
         {/* 1. FUNCTIONAL QUICK ACTIONS BAR */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -241,21 +237,21 @@ const AdminDashboard = () => {
             <span className="text-[13px] font-bold">Global Announcement</span>
           </button>
           <button 
-            onClick={() => showToast('Routing to User Management Module...')}
+            onClick={() => setIsWorkspaceModalOpen(true)}
             className="flex items-center justify-center gap-2 bg-white border border-[#d6c9b8] hover:border-[#8b6f5a] hover:bg-[#faf6f0] text-[#3b2a23] p-3 rounded-xl shadow-sm transition-all group"
           >
             <UserCog size={18} className="text-[#8b6f5a] group-hover:scale-110 transition-transform" />
             <span className="text-[13px] font-bold">Manage Workspaces</span>
           </button>
           <button 
-            onClick={handleGenerateTaxReport}
+            onClick={() => setIsTaxModalOpen(true)}
             className="flex items-center justify-center gap-2 bg-white border border-[#d6c9b8] hover:border-[#8b6f5a] hover:bg-[#faf6f0] text-[#3b2a23] p-3 rounded-xl shadow-sm transition-all group"
           >
             <BarChart2 size={18} className="text-[#8b6f5a] group-hover:scale-110 transition-transform" />
             <span className="text-[13px] font-bold">Generate Tax Report</span>
           </button>
           <button 
-            onClick={() => showToast('Routing to Infrastructure Settings...')}
+            onClick={() => setIsRegionModalOpen(true)}
             className="flex items-center justify-center gap-2 bg-white border border-[#d6c9b8] hover:border-[#8b6f5a] hover:bg-[#faf6f0] text-[#3b2a23] p-3 rounded-xl shadow-sm transition-all group"
           >
             <Globe size={18} className="text-[#8b6f5a] group-hover:scale-110 transition-transform" />
@@ -265,7 +261,7 @@ const AdminDashboard = () => {
 
         {/* 2. DYNAMIC KPI STATS ROW */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {currentKPIs.map((stat, i) => (
+          {kpis.map((stat, i) => (
             <div key={i} className="bg-white border border-[#d6c9b8] rounded-2xl p-6 shadow-sm hover:border-[#8b6f5a] transition-colors relative overflow-hidden group">
               <div className="flex justify-between items-start mb-4">
                 <div className="w-10 h-10 bg-[#faf6f0] rounded-xl flex items-center justify-center border border-[#d6c9b8] group-hover:bg-[#8b6f5a] group-hover:text-white transition-colors text-[#8b6f5a]">
@@ -309,20 +305,24 @@ const AdminDashboard = () => {
                 <div className="border-t border-[#d6c9b8] w-full h-0"></div>
               </div>
 
-              {currentChart.map((data, i) => (
-                <div key={i} className="flex flex-col items-center gap-3 flex-1 group z-10 h-full justify-end">
-                  <div className="w-full relative flex justify-center h-full items-end">
-                    <div className="absolute -top-10 opacity-0 group-hover:opacity-100 bg-[#3b2a23] text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition-opacity whitespace-nowrap z-20 shadow-xl border border-[#8b6f5a]">
-                      Val: {data.value}
+              {chartData.length === 0 ? (
+                <div className="absolute inset-0 flex items-center justify-center text-[#8b6f5a] text-sm font-bold">No chart data available for {timeRange}</div>
+              ) : (
+                chartData.map((data, i) => (
+                  <div key={i} className="flex flex-col items-center gap-3 flex-1 group z-10 h-full justify-end">
+                    <div className="w-full relative flex justify-center h-full items-end">
+                      <div className="absolute -top-10 opacity-0 group-hover:opacity-100 bg-[#3b2a23] text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition-opacity whitespace-nowrap z-20 shadow-xl border border-[#8b6f5a]">
+                        Val: {data.value}%
+                      </div>
+                      <div 
+                        className="w-3/4 bg-[#d6c9b8] group-hover:bg-[#8b6f5a] rounded-t-md transition-all duration-500"
+                        style={{ height: `${data.value}%` }}
+                      />
                     </div>
-                    <div 
-                      className="w-3/4 bg-[#d6c9b8] group-hover:bg-[#8b6f5a] rounded-t-md transition-all duration-500"
-                      style={{ height: `${data.value}%` }}
-                    />
+                    <span className="text-[11px] font-bold text-[#8b6f5a] uppercase truncate w-full text-center">{data.label}</span>
                   </div>
-                  <span className="text-[11px] font-bold text-[#8b6f5a] uppercase">{data.label}</span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
 
@@ -334,7 +334,7 @@ const AdminDashboard = () => {
               </h3>
             </div>
             <div className="flex flex-col gap-3">
-              {SYSTEM_HEALTH.map((sys, i) => (
+              {systemHealth.map((sys, i) => (
                 <div key={i} className="p-3 border border-[#d6c9b8] bg-[#faf6f0] rounded-xl flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg ${sys.status === 'Operational' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -355,7 +355,7 @@ const AdminDashboard = () => {
         </div>
 
         {/* 4. FUNCTIONAL RECENT ACTIVITY LOG */}
-        <div className="bg-white border border-[#d6c9b8] rounded-2xl shadow-sm overflow-hidden flex flex-col">
+        <div className="bg-white border border-[#d6c9b8] rounded-2xl shadow-sm overflow-hidden flex flex-col mb-10">
           <div className="p-5 border-b border-[#d6c9b8] bg-[#faf6f0] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h3 className="text-[16px] font-bold text-[#3b2a23]">Global Activity Log</h3>
@@ -473,7 +473,7 @@ const AdminDashboard = () => {
       </div>
 
       {/* ========================================= */}
-      {/* GLOBAL ANNOUNCEMENT MODAL                 */}
+      {/* 1. GLOBAL ANNOUNCEMENT MODAL              */}
       {/* ========================================= */}
       {isAnnouncementModalOpen && (
         <div className="fixed inset-0 z-70 flex items-center justify-center p-4">
@@ -489,7 +489,7 @@ const AdminDashboard = () => {
             </div>
             <div className="p-6">
               <p className="text-[13px] text-[#3b2a23]/80 mb-5">
-                This message will appear as a banner in the dashboard for all active workspaces.
+                This message will appear as a banner in the dashboard for all active workspaces and be sent via email if enabled.
               </p>
               <div className="flex flex-col gap-2 mb-2">
                 <label className="text-[12px] font-bold text-[#8b6f5a] uppercase tracking-widest">Broadcast Message</label>
@@ -516,12 +516,125 @@ const AdminDashboard = () => {
       )}
 
       {/* ========================================= */}
+      {/* 2. MANAGE WORKSPACES MODAL (REDIRECT)     */}
+      {/* ========================================= */}
+      {isWorkspaceModalOpen && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-[#3b2a23]/60 backdrop-blur-sm animate-fade-in" onClick={() => setIsWorkspaceModalOpen(false)} />
+          <div className="relative bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col animate-fade-in-up border border-[#d6c9b8] p-8 text-center items-center">
+            <div className="w-16 h-16 bg-[#faf6f0] border border-[#d6c9b8] rounded-2xl flex items-center justify-center text-[#8b6f5a] mb-6">
+              <UserCog size={32} />
+            </div>
+            <h3 className="text-[20px] font-bold text-[#3b2a23] mb-2">Workspace CRM</h3>
+            <p className="text-[14px] text-[#8b6f5a] mb-8 font-medium">
+              Managing users, billing profiles, and workspace allocations happens in the dedicated Users CRM module.
+            </p>
+            <div className="flex w-full gap-3">
+              <button onClick={() => setIsWorkspaceModalOpen(false)} className="flex-1 px-4 py-2.5 border border-[#d6c9b8] bg-white text-[#3b2a23] text-[14px] font-bold rounded-xl hover:bg-[#f5efe6] transition-colors">
+                Close
+              </button>
+              <button onClick={() => { setIsWorkspaceModalOpen(false); showToast('Routing to User CRM module...'); }} className="flex-1 bg-[#3b2a23] hover:bg-black text-white px-4 py-2.5 rounded-xl text-[14px] font-bold transition-colors">
+                Go to CRM
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================= */}
+      {/* 3. GENERATE TAX REPORT MODAL              */}
+      {/* ========================================= */}
+      {isTaxModalOpen && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-[#3b2a23]/60 backdrop-blur-sm animate-fade-in" onClick={() => setIsTaxModalOpen(false)} />
+          <form onSubmit={handleGenerateTaxReport} className="relative bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col animate-fade-in-up border border-[#d6c9b8]">
+            <div className="px-6 py-5 border-b border-[#d6c9b8] flex items-center justify-between bg-[#faf6f0]">
+              <h3 className="text-[18px] font-bold text-[#3b2a23] flex items-center gap-2">
+                <FileText size={20} className="text-[#8b6f5a]" /> Fiscal Tax Report
+              </h3>
+              <button type="button" onClick={() => setIsTaxModalOpen(false)} className="text-[#8b6f5a] hover:text-[#3b2a23] hover:bg-white p-1.5 rounded-lg transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-[13px] text-[#3b2a23]/80 mb-5">
+                Generate a PDF report containing all completed invoices, tax allocations, and total revenue for your selected fiscal period.
+              </p>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Start Date</label>
+                  <input type="date" required className="w-full px-4 py-2.5 bg-white border border-[#d6c9b8] rounded-xl text-[14px] text-[#3b2a23] font-medium outline-none focus:border-[#8b6f5a]" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">End Date</label>
+                  <input type="date" required className="w-full px-4 py-2.5 bg-white border border-[#d6c9b8] rounded-xl text-[14px] text-[#3b2a23] font-medium outline-none focus:border-[#8b6f5a]" />
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-6 border-t border-[#d6c9b8] bg-[#faf6f0]">
+              <button type="button" onClick={() => setIsTaxModalOpen(false)} className="flex-1 px-4 py-2.5 border border-[#d6c9b8] bg-white text-[#3b2a23] text-[14px] font-bold rounded-xl hover:bg-[#f5efe6] transition-colors shadow-sm">
+                Cancel
+              </button>
+              <button type="submit" className="flex-2 bg-[#8b6f5a] hover:bg-[#6c5544] text-white px-4 py-2.5 rounded-xl text-[14px] font-bold shadow-sm transition-colors flex items-center justify-center gap-2">
+                <Download size={16} /> Generate PDF
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ========================================= */}
+      {/* 4. REGION RESTRICTIONS MODAL              */}
+      {/* ========================================= */}
+      {isRegionModalOpen && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-[#3b2a23]/60 backdrop-blur-sm animate-fade-in" onClick={() => setIsRegionModalOpen(false)} />
+          <div className="relative bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col animate-fade-in-up border border-[#d6c9b8]">
+            <div className="px-6 py-5 border-b border-[#d6c9b8] flex items-center justify-between bg-[#faf6f0]">
+              <h3 className="text-[18px] font-bold text-[#3b2a23] flex items-center gap-2">
+                <Globe size={20} className="text-[#8b6f5a]" /> API Region Restrictions
+              </h3>
+              <button type="button" onClick={() => setIsRegionModalOpen(false)} className="text-[#8b6f5a] hover:text-[#3b2a23] hover:bg-white p-1.5 rounded-lg transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-[13px] text-[#3b2a23]/80 mb-5">
+                Block traffic or purchases from specific geographic regions for compliance (e.g., GDPR, CAN-SPAM).
+              </p>
+              <div className="flex flex-col gap-3">
+                {['United Kingdom & EU', 'United States (North America)', 'Asia & Pacific', 'Middle East & Africa'].map((region, i) => (
+                  <label key={i} className="flex items-center justify-between p-3 border border-[#d6c9b8] rounded-xl hover:bg-[#faf6f0] cursor-pointer transition-colors group">
+                    <span className="text-[14px] font-bold text-[#3b2a23]">{region}</span>
+                    <div className="relative flex items-center">
+                      <input type="checkbox" defaultChecked={i < 2} className="peer sr-only" />
+                      <div className="w-11 h-6 bg-[#d6c9b8] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#8b6f5a]"></div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-6 border-t border-[#d6c9b8] bg-[#faf6f0]">
+              <button type="button" onClick={() => setIsRegionModalOpen(false)} className="flex-1 px-4 py-2.5 border border-[#d6c9b8] bg-white text-[#3b2a23] text-[14px] font-bold rounded-xl hover:bg-[#f5efe6] transition-colors shadow-sm">
+                Discard Changes
+              </button>
+              <button onClick={() => { setIsRegionModalOpen(false); showToast('Geo-restrictions updated.'); }} className="flex-2 bg-[#3b2a23] hover:bg-black text-white px-4 py-2.5 rounded-xl text-[14px] font-bold shadow-sm transition-colors flex items-center justify-center gap-2">
+                <Check size={16} /> Save Rules
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================= */}
       {/* TOAST NOTIFICATION SYSTEM                 */}
       {/* ========================================= */}
       {toast && (
         <div className="fixed bottom-10 right-10 z-80 bg-[#3b2a23] text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 animate-fade-in-up border border-[#8b6f5a]">
           {toast.type === 'loading' ? (
             <Loader2 size={20} className="text-[#d6c9b8] animate-spin" />
+          ) : toast.type === 'error' ? (
+            <AlertTriangle size={20} className="text-red-400" />
           ) : (
             <CheckCircle2 size={20} className="text-emerald-400" />
           )}

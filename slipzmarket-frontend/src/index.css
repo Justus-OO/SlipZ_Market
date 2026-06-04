@@ -23,19 +23,33 @@
 
 /* Dark theme override */
 [data-theme="dark"] {
-  --bg: #08111d;
-  --surface: #0d1726;
-  --surface-soft: #111c2d;
-  --surface-strong: #162235;
-  --text-primary: #ecf2fb;
-  --muted: #a7b5c9;
-  --border: #21324a;
-  --border-strong: #2f4563;
-  --accent: #7f9bc7;
-  --accent-hover: #9ab0d2;
-  --accent-foreground: #08111d;
-  --accent-bg: #122033;
-  --accent-border: rgba(127,155,199,0.28);
+  /* Deep, warm black-cherry backgrounds */
+  --bg: #221519;
+  --surface: #2d1c22;
+  --surface-soft: #38242b;
+  --surface-strong: #452c34;
+  
+  /* Soft pinkish-white text to reduce eye strain */
+  --text-primary: #faedf0;
+  
+  /* Dusty rose for secondary text/icons */
+  --muted: #b898a3;
+  
+  /* Rich wine borders */
+  --border: #523540;
+  --border-strong: #694451;
+  
+  /* Cute blush/rose accent pops */
+  --accent: #d46a84;
+  --accent-hover: #e6859b;
+  
+  /* Dark text on bright accent buttons */
+  --accent-foreground: #221519;
+  
+  /* Tinted background for active states or subtle highlights */
+  --accent-bg: #402029;
+  --accent-border: rgba(212, 106, 132, 0.25);
+  
   color-scheme: dark;
 }
 

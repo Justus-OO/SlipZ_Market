@@ -5,62 +5,40 @@ import prisma from '../db';
 import { MailerService } from '../services/mailer.service'; 
 
 export const startInactivityJob = () => {
-  // Run this check every 1 minute
-  cron.schedule('* * * * *', async () => {
+  // Use 10,000ms (10 seconds)
+  setInterval(async () => {
+    console.log("Checking for stale sessions...");
     
-    // 1. Calculate the time 10 minutes ago
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    // Set your threshold to 10 seconds for local testing
+    const tenSecondsAgo = new Date(Date.now() - 10 * 1000); 
 
     try {
-      // 2. Find sessions that need a reminder
-      // We are looking for sessions where:
-      // - Status is AWAITING_AGENT or AGENT_HANDLING
-      // - The LAST message was sent BY THE AGENT
-      // - The session hasn't been updated in over 10 minutes
-      // - We haven't already sent them a reminder (you'll need a flag in your DB for this)
-      
       const staleSessions = await prisma.chatSession.findMany({
         where: {
           status: { in: ['AWAITING_AGENT', 'AGENT_HANDLING'] },
-          updatedAt: { lt: tenMinutesAgo },
-          reminderSent: false // Assuming you add this boolean to your Prisma schema
+          updatedAt: { lt: tenSecondsAgo }, // Now checks 10s ago
+          reminderSent: false 
         },
-        include: {
-          user: true,
-          messages: {
-            orderBy: { createdAt: 'desc' },
-            take: 1
-          }
-        }
+        include: { user: true, messages: { orderBy: { createdAt: 'desc' }, take: 1 } }
       });
 
-      // 3. Process each stale session
       for (const session of staleSessions) {
         const lastMessage = session.messages[0];
-
-        // If the last message was from the admin, the user is the one who is inactive
         if (lastMessage && lastMessage.senderRole === 'AGENT') {
-          
-          // Send the email
-await MailerService.send({
-  to: session.user.email,
-  templateName: 'inactivity-reminder', // Make sure you create this template in your email system!
-  context: {
-    firstName: session.user.firstName || 'there'
-  }
-});
+          await MailerService.send({
+            to: session.user.email,
+            templateName: 'inactivity-reminder',
+            context: { firstName: session.user.firstName || 'there' }
+          });
 
-          // Mark the session so we don't spam them every minute
           await prisma.chatSession.update({
             where: { id: session.id },
             data: { reminderSent: true }
           });
-
-          console.log(`Sent inactivity reminder to ${session.user.email}`);
         }
       }
     } catch (error) {
       console.error("Error in inactivity job:", error);
     }
-  });
+  }, 10000); // 10 seconds interval
 };

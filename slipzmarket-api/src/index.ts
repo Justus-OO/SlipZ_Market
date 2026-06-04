@@ -20,6 +20,7 @@ import adminInvoiceRoutes from './routes/admin.invoice';
 import chatRoutes from './routes/chat';
 import paymentRoutes from './routes/payment';
 import datasetRoutes from './routes/datasets';
+import adminDashboardRoutes from './routes/admin.dashboard';
 
 const app = express();
 const PORT = 5000;
@@ -56,6 +57,7 @@ app.use('/api/admin-invoice', adminInvoiceRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/datasets', datasetRoutes);
+app.use('/api/admin-dashboard', adminDashboardRoutes);
 
 startInactivityJob();
 

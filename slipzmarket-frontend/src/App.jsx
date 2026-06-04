@@ -13,7 +13,7 @@ import ManagePackages from './pages/ManagePackages';
 import ManageInvoices from './pages/ManageInvoices';
 import Home from './pages/Home';
 import Auth from './pages/Auth';
-import MyDatasets from './pages/MyDatasets/Index';
+import MyDatasets from './pages/MyDatasets';
 import { AdminSupport } from './pages/Chat/AdminSupport';
 import SiteCustomization from './pages/SiteCustomization';
 
