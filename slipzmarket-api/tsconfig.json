@@ -1,25 +1,26 @@
 {
   "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist",
+    "rootDir": "./src",
+
     "baseUrl": "./src",
     "paths": {
       "generated/client/*": ["generated/client/*"]
     },
-    "moduleResolution": "node",
 
-    "target": "ESNext",
-    "module": "NodeNext",
-
-    "rootDir": "./src",
-    "outDir": "./dist",
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
 
-    /* CRITICAL FIXES FOR YOUR LOGS */
-    "noImplicitAny": false,         
-         
+    /* Strict Mode Overrides */
+    "noImplicitAny": false,
     "strict": false,
 
-    "forceConsistentCasingInFileNames": true
+    /* Silence Deprecation Warnings */
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src/**/*"]
 }
