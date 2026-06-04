@@ -1,0 +1,329 @@
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../src/generated/client"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- CORE MODELS ---
+
+model Workspace {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  balance   Decimal  @default(0.00) @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users    User[]
+  invoices Invoice[]
+
+  chatSessions ChatSession[]
+  unlockedLeads UnlockedLead[]
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String?
+  firstName    String?
+  lastName     String?
+  role         Role     @default(USER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  isVerified   Boolean   @default(false)
+  otpCode      String?
+  otpExpiresAt DateTime?
+
+  // --- DASHBOARD & BILLING ADDITIONS ---
+  exportCreditsUsed  Int    @default(0)
+  exportCreditsTotal Int    @default(5000)
+  planTier           String @default("Free Trial")
+
+  avatarUrl        String?
+  timezone         String  @default("GMT (London)")
+  currency         String  @default("GBP (£)")
+  twoFactorEnabled Boolean @default(false)
+
+  // --- NOTIFICATION TOGGLES ---
+  loginAlerts     Boolean @default(true)
+  exportAlerts    Boolean @default(true)
+  marketingEmails Boolean @default(false)
+  isBlacklisted   Boolean @default(false)
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  billingProfile BillingProfile?
+
+  // --- NEW: RELATIONS FOR PROSPECTING DASHBOARD ---
+  folders    Folder[]
+  lists      List[]
+  exportLogs ExportLog[]
+  cartItems  CartItem[]
+
+  customerSessions ChatSession[] @relation("UserSessions")
+  assignedSessions ChatSession[] @relation("AgentSessions")
+}
+
+model SupportTicket {
+  id        String   @id @default(uuid())
+  invoiceId String
+  userId    String
+  type      String // "REFUND" or "DISCREPANCY"
+  message   String
+  status    String   @default("OPEN") // OPEN, REVIEWING, RESOLVED
+  createdAt DateTime @default(now())
+}
+
+model Package {
+  id             String   @id // e.g., PKG-1001
+  brand          String
+  category       String
+  leadsCount     Int
+  price          Decimal  @db.Decimal(10, 2)
+  deliverability String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  cartItems CartItem[]
+  invoiceItems InvoiceItem[]
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade) // Add this
+  packageId String
+  package   Package  @relation(fields: [packageId], references: [id])
+  quantity  Int      @default(1)
+  addedAt   DateTime @default(now())
+}
+
+model EmailTemplate {
+  id          String   @id @default(uuid())
+  name        String   @unique // e.g., "INVOICE_CONFIRMATION", "PASSWORD_RESET"
+  subject     String
+  htmlContent String // Use Handlebars syntax here, e.g., "Hello {{name}}"
+  updatedAt   DateTime @updatedAt
+}
+
+model MasterLead {
+  id          String   @id @default(uuid())
+  firstName   String?
+  lastName    String?
+  email       String   @unique
+  phone       String?
+  jobTitle    String
+  companyName String
+  industry    String
+  country     String
+  createdAt   DateTime @default(now())
+
+  // Relation to keep track of who unlocked this specific lead
+  unlockedBy  UnlockedLead[]
+}
+
+model Invoice {
+  id          String   @id
+  description String
+  amount      Decimal  @db.Decimal(10, 2)
+  status      String // e.g., COMPLETED, PROCESSING
+  date        DateTime @default(now())
+
+  items InvoiceItem[]
+  unlockedLeads UnlockedLead[]
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+}
+
+
+model UnlockedLead {
+  id          String     @id @default(uuid())
+  workspaceId String
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id])
+  leadId      String
+  lead        MasterLead @relation(fields: [leadId], references: [id])
+  invoiceId   String
+  invoice     Invoice    @relation(fields: [invoiceId], references: [id])
+  unlockedAt  DateTime   @default(now())
+
+  @@unique([workspaceId, leadId]) // Prevents a user from paying twice for the exact same lead
+}
+
+
+model InvoiceItem {
+  id              String  @id @default(uuid())
+  invoiceId       String
+  invoice         Invoice @relation(fields: [invoiceId], references: [id])
+  packageId       String
+  quantity        Int
+  priceAtPurchase Decimal @db.Decimal(10, 2)
+
+  package         Package @relation(fields: [packageId], references: [id])
+}
+
+model BillingProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  companyName String
+  firstName   String
+  lastName    String
+  email       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  action    String // "CHECKOUT_INITIATED", "PAYMENT_SUCCESS"
+  userId    String
+  metadata  Json // Store raw IP and Browser info here
+  createdAt DateTime @default(now())
+}
+
+model GlobalSettings {
+  id String @id @default("singleton")
+
+  // General & Branding
+  platformName    String  @default("SlipZMarket B2B")
+  supportEmail    String  @default("support@slipzmarket.com")
+  maintenanceMode Boolean @default(false)
+  defaultRegion   String  @default("UK & Europe")
+
+  // Payments
+  gateway       String  @default("Stripe")
+  currency      String  @default("GBP (£)")
+  processingFee Decimal @default(4.50) @db.Decimal(10, 2)
+  publicKey     String  @default("")
+  secretKey     String  @default("")
+
+  // Localization & UI
+  defaultLanguage  String   @default("en-US")
+  enabledLanguages String[] @default(["en-US", "en-GB", "es-ES", "fr-FR"]) // 👈 NEW
+  timezone         String   @default("UTC")
+  dateFormat       String   @default("MM/DD/YYYY")
+  primaryColor     String   @default("#3b2a23")
+  accentColor      String   @default("#8b6f5a")
+  backgroundColor  String   @default("#f5efe6")
+  fontFamily       String   @default("Inter, system-ui, sans-serif")
+  logoUrl          String   @default("")
+
+  // Custom Scripts
+  googleAnalyticsId String @default("") // 👈 NEW
+  customHeadCode    String @db.Text @default("") // 👈 NEW
+
+  // Security
+  require2FA     Boolean @default(true)
+  sessionTimeout String  @default("60")
+
+  // The Ultimate Dynamic Engine
+  customVariables Json @default("{}")
+
+  updatedAt DateTime @updatedAt
+}
+
+// ==========================================
+// NEW: DASHBOARD SPECIFIC MODELS
+// ==========================================
+
+model Folder {
+  id   String @id @default(uuid())
+  name String
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model List {
+  id           String @id @default(uuid())
+  name         String
+  contactCount Int    @default(0)
+  dataType     String // "Email Only", "Email & Phone", "Full Profile"
+  status       String @default("Draft") // "Ready to Export", "Enriching...", "Exported"
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ExportLog {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listName    String // Stores the snapshot name of the list exported
+  recordCount Int // How many contacts were in the export
+  createdAt   DateTime @default(now())
+}
+
+enum ChatStatus {
+  BOT_HANDLING
+  AWAITING_AGENT
+  AGENT_HANDLING
+  CLOSED
+}
+
+model FAQ {
+  id        String   @id @default(uuid())
+  question  String   @unique
+  answer    String
+  category  String   @default("General")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ChatSession {
+  id          String      @id @default(uuid())
+  status      ChatStatus  @default(BOT_HANDLING)
+
+  // 👉 NEW: For the 10-minute inactivity email cron job
+  reminderSent Boolean    @default(false)
+
+  // 👉 NEW: For the Context Panel (Private Admin Notes)
+  internalNotes String?   @db.Text
+
+  // The end-user interacting with the bot/agent
+  userId      String
+  user        User        @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Assigned support agent (Admin/Staff User)
+  agentId     String?
+  agent       User?       @relation("AgentSessions", fields: [agentId], references: [id])
+
+  workspaceId String
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  messages    ChatMessage[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model ChatMessage {
+  id          String      @id @default(uuid())
+  sessionId   String
+  session     ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  senderId    String      // Can be the userId, agentId, or "SYSTEM_BOT"
+  senderRole  String      // "USER", "AGENT", or "BOT"
+  
+  text        String      @db.Text
+
+  // 👉 NEW: For pinning/starring specific messages in the chat UI
+  isStarred   Boolean     @default(false)
+
+  createdAt   DateTime    @default(now())
+}
+
+enum Role {
+  ADMIN
+  USER
+}

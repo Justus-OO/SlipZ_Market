@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+/* Global theme variables and font */
+:root {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+
+  /* Core theme tokens (light default) */
+  --bg: #f5efe6;
+  --surface: #ffffff;
+  --surface-soft: #faf6f0;
+  --surface-strong: #f3ede6;
+  --text-primary: #3b2a23;
+  --muted: #8b6f5a;
+  --border: #d6c9b8;
+  --border-strong: #c7b59f;
+  --accent: #8b6f5a;
+  --accent-hover: #6c5544;
+  --accent-foreground: #ffffff;
+  --accent-bg: #ffffff;
+  --accent-border: rgba(214,201,184,0.6);
+  color-scheme: light;
+}
+
+/* Dark theme override */
+[data-theme="dark"] {
+  --bg: #08111d;
+  --surface: #0d1726;
+  --surface-soft: #111c2d;
+  --surface-strong: #162235;
+  --text-primary: #ecf2fb;
+  --muted: #a7b5c9;
+  --border: #21324a;
+  --border-strong: #2f4563;
+  --accent: #7f9bc7;
+  --accent-hover: #9ab0d2;
+  --accent-foreground: #08111d;
+  --accent-bg: #122033;
+  --accent-border: rgba(127,155,199,0.28);
+  color-scheme: dark;
+}
+
+/* Apply font and base colors */
+html, body, #root {
+  height: 100%;
+}
+body {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  background: var(--bg);
+  color: var(--text-primary);
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* Helper utility classes for legacy components to opt-in to theme tokens */
+.bg-primary { background: var(--accent) !important; }
+.bg-surface { background: var(--surface) !important; }
+.bg-app { background: var(--bg) !important; }
+.bg-panel { background: var(--surface) !important; }
+.bg-panel-soft { background: var(--surface-soft) !important; }
+.bg-panel-strong { background: var(--surface-strong) !important; }
+.text-on-primary { color: var(--accent-foreground) !important; }
+.text-primary { color: var(--text-primary) !important; }
+.text-muted { color: var(--muted) !important; }
+.border-theme { border-color: var(--border) !important; }
+.border-theme-strong { border-color: var(--border-strong) !important; }
+
+/* Accent and surface helpers */
+.bg-accent { background: var(--accent) !important; }
+.text-surface { color: var(--surface) !important; }
+.border-accent { border-color: var(--accent-border) !important; }
+/* Background helper for border color usage */
+.bg-theme { background: var(--border) !important; }
+
+/* Legacy palette compatibility layer for page components */
+.bg-white { background: var(--surface) !important; }
+.bg-slate-50, .bg-slate-100 { background: var(--surface-soft) !important; }
+.text-slate-900 { color: var(--text-primary) !important; }
+.text-slate-700 { color: var(--text-primary) !important; }
+.text-slate-600, .text-slate-500 { color: var(--muted) !important; }
+.text-slate-400 { color: color-mix(in srgb, var(--muted) 72%, transparent) !important; }
+.border-slate-200, .border-slate-100 { border-color: var(--border) !important; }
+.hover\:bg-slate-50:hover, .hover\:bg-slate-100:hover { background: var(--surface-soft) !important; }
+.hover\:text-slate-900:hover { color: var(--text-primary) !important; }
+.bg-\[\#f5efe6\] { background: var(--bg) !important; }
+.bg-\[\#f9fafb\] { background: var(--bg) !important; }
+.bg-\[\#faf6f0\], .bg-\[\#f5f2f2\], .bg-\[\#fcfbfb\], .bg-\[\#f3ede6\] { background: var(--surface-soft) !important; }
+.bg-\[\#8b6f5a\], .bg-\[\#800000\] { background: var(--accent) !important; }
+.bg-\[\#6c5544\] { background: var(--accent-hover) !important; }
+.text-\[\#3b2a23\], .text-\[\#2a1b1b\] { color: var(--text-primary) !important; }
+.text-\[\#8b6f5a\], .text-\[\#7a6b6b\] { color: var(--muted) !important; }
+.border-\[\#d6c9b8\], .border-\[\#d8cdcd\], .border-\[\#e8e2e2\] { border-color: var(--border) !important; }
+.border-\[\#8b6f5a\] { border-color: var(--accent) !important; }
+.hover\:bg-\[\#faf6f0\]:hover, .hover\:bg-\[\#f5f2f2\]:hover { background: var(--surface-soft) !important; }
+.hover\:bg-\[\#6c5544\]:hover { background: var(--accent-hover) !important; }
+.hover\:text-\[\#3b2a23\]:hover, .hover\:text-\[\#2a1b1b\]:hover { color: var(--text-primary) !important; }
+.focus\:border-\[\#8b6f5a\]:focus { border-color: var(--accent) !important; }
+.focus\:ring-\[\#8b6f5a\]:focus { --tw-ring-color: var(--accent) !important; }
