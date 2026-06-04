@@ -47,9 +47,7 @@ COPY --from=backend-build /app/api/dist ./api/dist
 COPY --from=backend-build /app/api/package*.json ./api/
 COPY --from=backend-build /app/api/node_modules ./api/node_modules
 
-# 3. CRITICAL: Copy the custom generated database client folder 
-# because your code explicitly looks for it in relative paths
-COPY --from=backend-build /app/api/src/generated ./api/src/generated
+COPY --from=backend-build /app/api/src/generated /app/api/dist/generated
 
 # Setup Nginx configuration
 COPY ./nginx.conf /etc/nginx/sites-available/default
