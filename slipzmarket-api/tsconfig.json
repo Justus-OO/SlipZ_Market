@@ -1,8 +1,14 @@
 {
   "compilerOptions": {
+    "baseUrl": "./src",
+    "paths": {
+      "generated/client/*": ["generated/client/*"]
+    },
+    "moduleResolution": "node",
+
     "target": "ESNext",
     "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+
     "rootDir": "./src",
     "outDir": "./dist",
     "esModuleInterop": true,
@@ -10,7 +16,7 @@
 
     /* CRITICAL FIXES FOR YOUR LOGS */
     "noImplicitAny": false,         
-    "skipLibCheck": true,           
+         
     "strict": false,
 
     "forceConsistentCasingInFileNames": true

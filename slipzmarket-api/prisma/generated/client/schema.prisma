@@ -1,6 +1,6 @@
 generator client {
   provider        = "prisma-client-js"
-  output          = "../src/generated/client"
+  output          = "./generated/client"
   previewFeatures = ["driverAdapters"]
 }
 
@@ -20,7 +20,7 @@ model Workspace {
   users    User[]
   invoices Invoice[]
 
-  chatSessions ChatSession[]
+  chatSessions  ChatSession[]
   unlockedLeads UnlockedLead[]
 }
 
@@ -89,7 +89,7 @@ model Package {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  cartItems CartItem[]
+  cartItems    CartItem[]
   invoiceItems InvoiceItem[]
 }
 
@@ -124,7 +124,7 @@ model MasterLead {
   createdAt   DateTime @default(now())
 
   // Relation to keep track of who unlocked this specific lead
-  unlockedBy  UnlockedLead[]
+  unlockedBy UnlockedLead[]
 }
 
 model Invoice {
@@ -134,13 +134,12 @@ model Invoice {
   status      String // e.g., COMPLETED, PROCESSING
   date        DateTime @default(now())
 
-  items InvoiceItem[]
+  items         InvoiceItem[]
   unlockedLeads UnlockedLead[]
 
   workspaceId String
   workspace   Workspace @relation(fields: [workspaceId], references: [id])
 }
-
 
 model UnlockedLead {
   id          String     @id @default(uuid())
@@ -155,7 +154,6 @@ model UnlockedLead {
   @@unique([workspaceId, leadId]) // Prevents a user from paying twice for the exact same lead
 }
 
-
 model InvoiceItem {
   id              String  @id @default(uuid())
   invoiceId       String
@@ -164,7 +162,7 @@ model InvoiceItem {
   quantity        Int
   priceAtPurchase Decimal @db.Decimal(10, 2)
 
-  package         Package @relation(fields: [packageId], references: [id])
+  package Package @relation(fields: [packageId], references: [id])
 }
 
 model BillingProfile {
@@ -216,7 +214,7 @@ model GlobalSettings {
 
   // Custom Scripts
   googleAnalyticsId String @default("") // 👈 NEW
-  customHeadCode    String @db.Text @default("") // 👈 NEW
+  customHeadCode    String @default("") @db.Text // 👈 NEW
 
   // Security
   require2FA     Boolean @default(true)
@@ -282,45 +280,45 @@ model FAQ {
 }
 
 model ChatSession {
-  id          String      @id @default(uuid())
-  status      ChatStatus  @default(BOT_HANDLING)
+  id     String     @id @default(uuid())
+  status ChatStatus @default(BOT_HANDLING)
 
   // 👉 NEW: For the 10-minute inactivity email cron job
-  reminderSent Boolean    @default(false)
+  reminderSent Boolean @default(false)
 
   // 👉 NEW: For the Context Panel (Private Admin Notes)
-  internalNotes String?   @db.Text
+  internalNotes String? @db.Text
 
   // The end-user interacting with the bot/agent
-  userId      String
-  user        User        @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
 
   // Assigned support agent (Admin/Staff User)
-  agentId     String?
-  agent       User?       @relation("AgentSessions", fields: [agentId], references: [id])
+  agentId String?
+  agent   User?   @relation("AgentSessions", fields: [agentId], references: [id])
 
   workspaceId String
-  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
-  messages    ChatMessage[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  messages  ChatMessage[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 }
 
 model ChatMessage {
-  id          String      @id @default(uuid())
-  sessionId   String
-  session     ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  id        String      @id @default(uuid())
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  senderId    String      // Can be the userId, agentId, or "SYSTEM_BOT"
-  senderRole  String      // "USER", "AGENT", or "BOT"
-  
-  text        String      @db.Text
+  senderId   String // Can be the userId, agentId, or "SYSTEM_BOT"
+  senderRole String // "USER", "AGENT", or "BOT"
+
+  text String @db.Text
 
   // 👉 NEW: For pinning/starring specific messages in the chat UI
-  isStarred   Boolean     @default(false)
+  isStarred Boolean @default(false)
 
-  createdAt   DateTime    @default(now())
+  createdAt DateTime @default(now())
 }
 
 enum Role {

@@ -22,8 +22,8 @@ RUN npm ci
 
 COPY slipzmarket-api/ ./
 
-# Pass a dummy URL so Prisma generates the client without crashing
-RUN DATABASE_URL="postgresql://dummy:dummy@localhost/dummy" npx prisma generate
+RUN rm -rf src/generated/client && \
+    DATABASE_URL="postgresql://dummy:dummy@localhost/dummy" npx prisma generate
 
 # Compile TypeScript into the /dist directory
 RUN npm run build 
