@@ -22,9 +22,9 @@ RUN npm ci
 
 COPY slipzmarket-api/ ./
 
-# CRITICAL: Generate your database client/types before compiling typescript
-# (e.g., if using Prisma. Adjust if using a different engine like Kysely/Supabase)
-RUN npx prisma generate || true
+# CRITICAL SECURE FIX: Pass a dummy URL so Prisma generates the client 
+# without needing your live database credentials during the build.
+RUN DATABASE_URL="postgresql://dummy:dummy@localhost/dummy" npx prisma generate
 
 # Compile TypeScript into the /dist directory
 RUN npm run build 
@@ -58,4 +58,4 @@ COPY ./nginx.conf /etc/nginx/sites-available/default
 EXPOSE 80
 
 # Clean execution: Start Nginx as a background daemon, then pass process control to Node
-CMD nginx && node api/dist/index.js
+CMD service nginx start && node api/dist/index.js
