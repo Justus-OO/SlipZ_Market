@@ -1,15 +1,13 @@
 import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
+import { API_URL, SOCKET_URL } from '../../utils/api';
 import { 
   Search, Send, MessageCircle, User, Loader2, 
   ChevronRight, Shield, Mail, Phone, Clock, 
   Paperclip, MoreVertical, CheckCircle, Bot, Headset,
   Star, Trash2, Copy // Newly added icons
 } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
 
 export const AdminSupport = () => {
   const [sessions, setSessions] = useState([]);

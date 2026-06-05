@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { API_URL } from '../../utils/api';
 import { GoogleLogin } from '@react-oauth/google';
 import { 
   Asterisk, ArrowRight, Mail, Lock, 
@@ -8,8 +9,6 @@ import {
   ShieldCheck, CheckCircle2, Loader2, Sparkles,
   Fingerprint, Link as LinkIcon, ArrowLeft, AlertCircle
 } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // ==========================================
 // 1. VERIFICATION FORM COMPONENT

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { API_URL } from '../../utils/api';
 import { useTranslation } from 'react-i18next';
 import {
   Search, ShieldCheck, X, ShoppingCart,
@@ -7,8 +8,6 @@ import {
   Lock, Check, MoreVertical, Activity,
   Loader2
 } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const BrowseLeads = () => {
   const { t } = useTranslation();

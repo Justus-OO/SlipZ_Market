@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
+import { API_URL } from '../../utils/api';
 import { useTranslation } from 'react-i18next';
 import { 
   Search, Filter, Plus, Edit2, Trash2, X, Save, 
   CheckCircle2, Database, Download, Mail, Phone, 
   Activity, Layers, Upload, Loader2, FileUp, AlertCircle
 } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const ManagePackages = () => {
   const { t } = useTranslation();

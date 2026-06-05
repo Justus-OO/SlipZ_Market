@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
+import { API_URL } from '../../utils/api';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import {
@@ -7,7 +8,6 @@ import {
   Lock, FileText, X, Mail, Phone, Building2, CheckCircle2, AlertCircle, Download, ArrowRight, Loader2, Wallet
 } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || 'pk_test_yourKeyHere');
 
 // --- STRIPE CHECKOUT COMPONENT ---

@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import axios from 'axios';
+import { API_URL } from '../../utils/api';
 import { useTranslation } from 'react-i18next';
 import { 
   Search, Filter, Download, CheckCircle2, 
@@ -9,8 +10,6 @@ import {
   MoreVertical, FileCheck, RefreshCw, AlertTriangle, FileDown,
   Loader2, Send
 } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const OrderHistory = () => {
   const { t } = useTranslation();

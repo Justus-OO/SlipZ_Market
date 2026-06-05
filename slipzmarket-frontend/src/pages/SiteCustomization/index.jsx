@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { API_URL } from '../../utils/api';
 import { useTranslation } from 'react-i18next';
 import { 
   Languages, Palette, Code, Mail, Save, 
   CheckCircle2, Globe, Image as ImageIcon, 
   Type, LayoutTemplate, Loader2, X
 } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const getAuthConfig = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('slipz_token')}` } });
 

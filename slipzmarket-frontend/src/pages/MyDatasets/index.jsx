@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 
 import axios from 'axios';
+import { API_URL } from '../../utils/api';
 
 import { 
 
@@ -11,12 +12,6 @@ import {
   SlidersHorizontal, Trash2, AlertTriangle, ChevronRight, CheckCircle2, AlertCircle, X, Building2, UserCircle, Briefcase, Mail, Phone, Globe, Tag
 
 } from 'lucide-react';
-
-
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-
-
 
 const MyDatasets = () => {
 

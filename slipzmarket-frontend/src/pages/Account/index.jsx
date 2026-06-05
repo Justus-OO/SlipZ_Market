@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { API_URL } from '../../utils/api';
 import { useTranslation } from 'react-i18next';
 import { 
   User, ShieldCheck, Smartphone, 
@@ -8,8 +9,6 @@ import {
   AlertOctagon, CheckCircle2, ToggleRight, ToggleLeft,
   Building2, CreditCard, ChevronRight, Loader2
 } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const Account = () => {
   const navigate = useNavigate();

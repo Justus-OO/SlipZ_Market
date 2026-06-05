@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { API_URL } from '../../utils/api';
 import { useTranslation } from 'react-i18next';
 import i18n from '../../i18n';
 import {
@@ -23,8 +24,6 @@ import ThemeToggle from './ThemeToggle';
 // --- STRIPE IMPORTS ---
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // Initialize Stripe outside of the component to avoid recreating the object on every render
 // Make sure you have VITE_STRIPE_PUBLISHABLE_KEY in your .env file

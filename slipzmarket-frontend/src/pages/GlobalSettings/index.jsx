@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { API_URL } from '../../utils/api';
 import { useTranslation } from 'react-i18next';
 import { 
   Settings, CreditCard, Database, ShieldCheck, 
@@ -7,8 +8,6 @@ import {
   Globe, Key, ToggleLeft, ToggleRight, Trash2,
   Loader2, Percent, Mail, Palette, Image as ImageIcon, Code, Plus
 } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const GlobalSettings = () => {
   const { t } = useTranslation();

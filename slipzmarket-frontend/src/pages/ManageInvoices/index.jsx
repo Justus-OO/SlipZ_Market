@@ -1,13 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
 import axios from 'axios';
+import { API_URL } from '../../utils/api';
 import { useTranslation } from 'react-i18next';
 import { 
   Search, Filter, Plus, Edit2, Trash2, X, Save, 
   CheckCircle2, Clock, AlertTriangle, Receipt, 
   Download, Building2, Calendar, DollarSign
 } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const ManageInvoices = () => {
   const { t } = useTranslation();
