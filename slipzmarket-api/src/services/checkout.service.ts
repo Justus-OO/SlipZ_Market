@@ -1,5 +1,6 @@
-import prisma from '../db';
-import { MailerService } from './mailer.service'; // Adjust path if necessary
+import prisma from '../db.js';
+import { MailerService } from './mailer.service.js';
+import { NotificationService } from './notification.service.js'; // 👈 Added Notification Import
 
 export const CheckoutService = {
   async completeOrder(
@@ -141,38 +142,67 @@ export const CheckoutService = {
         };
       });
 
-      // --- 🟢 SUCCESS EMAIL TRIGGER ---
-      // We send this outside the transaction so network delays don't hold the DB locks open
-      if (!result.isDuplicate && targetEmail && result.invoice) {
-        // Run in background (do not await) so response is fast
-        MailerService.send({
-          to: targetEmail,
-          templateName: 'order-success',
-          context: {
-            name: targetName,
-            invoiceId: result.invoice.id,
-            amount: stripeAmountPaid,
-            leadsUnlocked: result.receiptData.totalLeadsUnlocked
-          }
-        }).catch(err => console.error("Failed to send success email:", err));
+      // ==========================================
+      // 🟢 POST-TRANSACTION SUCCESS ACTIONS
+      // ==========================================
+
+      if (!result.isDuplicate && result.invoice) {
+        
+        // 1. Fire Real-Time In-App Notification 👈 NEW
+        NotificationService.sendToUser(userId, {
+          title: 'Purchase Successful! 🎉',
+          message: `Successfully unlocked ${result.receiptData.totalLeadsUnlocked} premium business leads. Invoice ${result.invoice.id} generated.`,
+          type: 'SUCCESS',
+          link: '/dashboard/history' // Adjust path to where users view invoices/leads
+        });
+
+        // 2. Trigger Success Email
+        if (targetEmail) {
+          MailerService.send({
+            to: targetEmail,
+            templateName: 'order-success',
+            context: {
+              name: targetName,
+              invoiceId: result.invoice.id,
+              amount: stripeAmountPaid,
+              leadsUnlocked: result.receiptData.totalLeadsUnlocked
+            }
+          }).catch(err => console.error("Failed to send success email:", err));
+        }
       }
 
       return result;
 
     } catch (error: any) {
-      // --- 🔴 FAILURE EMAIL TRIGGER ---
-      // If the transaction threw an error (price mismatch, insufficient data, etc.)
       
-      // We ignore empty cart errors since that implies they already checked out or abandoned
-      if (targetEmail && !error.message.includes('Cart is empty')) {
-        MailerService.send({
-          to: targetEmail,
-          templateName: 'order-failed',
-          context: {
-            name: targetName,
-            errorMessage: error.message.replace('ORDER_ABORTED: ', '').replace('INSUFFICIENT_DATA: ', '')
-          }
-        }).catch(err => console.error("Failed to send failure email:", err));
+      // ==========================================
+      // 🔴 TRANSACTION FAILURE ACTIONS
+      // ==========================================
+      
+      // Ignore empty cart errors (implies they already checked out or abandoned)
+      if (!error.message.includes('Cart is empty')) {
+        
+        const cleanErrorMessage = error.message.replace('ORDER_ABORTED: ', '').replace('INSUFFICIENT_DATA: ', '');
+
+        // 1. Fire Real-Time In-App Error Notification 👈 NEW
+        NotificationService.sendToUser(userId, {
+          title: 'Checkout Failed ❌',
+          message: cleanErrorMessage,
+          type: 'ERROR',
+          link: '/dashboard/cart'
+        });
+
+        // 2. Trigger Failure Email
+        if (targetEmail) {
+          MailerService.send({
+            to: targetEmail,
+            templateName: 'order-failed',
+            context: {
+              name: targetName,
+              errorMessage: cleanErrorMessage
+            }
+          }).catch(err => console.error("Failed to send failure email:", err));
+        }
       }
 
       // Rethrow the error so the calling controller/webhook knows it failed

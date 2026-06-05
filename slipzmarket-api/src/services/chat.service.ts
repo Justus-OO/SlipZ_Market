@@ -1,6 +1,7 @@
-import prisma from '../db';
+import prisma from '../db.js';
 import { ChatStatus } from '../generated/client/index.js';
-import { SocketService } from './socket.service';
+import { SocketService } from './socket.service.js';
+import { NotificationService } from './notification.service.js'; // 👈 Added Import
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -91,16 +92,22 @@ export const ChatEngineService = {
         }
       };
 
-      // C. Smart Routing: EXACT ARGUMENT MATCHING
+      // C. Smart Routing & Notifications
       if (session.agentId) {
-        // notifyUser expects 3 arguments: (sessionId/userId, eventName, payload)
+        // Send live chat socket event
         SocketService.notifyUser(session.agentId, 'new_message', messagePayload);
+        
+        // 🟢 Fire persistent notification to the assigned agent so they don't miss the reply
+        NotificationService.sendToUser(session.agentId, {
+          title: 'New Message 💬',
+          message: `${session.user?.firstName || 'A user'} replied to their support ticket.`,
+          type: 'MESSAGE',
+          link: `/admin/chat/${session.id}` // Adjust path based on your admin UI
+        });
       } else {
-        // notifyAdmins expects 2 arguments: (eventName, payload)
         SocketService.notifyAdmins('new_message', messagePayload);
       }
 
-      // Return early so the AI bot does not generate a response
       return { 
         session, 
         botResponse: null, 
@@ -135,11 +142,18 @@ export const ChatEngineService = {
         
         await this.sendBotMessage(session.id, "I want to make sure you get the best help possible. I am connecting you with a human support agent now.");
         
-        // notifyAdmins expects 2 arguments: (eventName, payload)
         SocketService.notifyAdmins('new_escalation', {
           sessionId: session.id,
           user: session.user,
           status: 'AWAITING_AGENT'
+        });
+
+        // 🟢 Create a persistent notification ticket for the user
+        NotificationService.sendToUser(userId, {
+          title: 'Support Escalation 🎫',
+          message: 'Your chat has been successfully escalated. A human agent will review your history and join shortly.',
+          type: 'INFO',
+          link: `/dashboard/support` // Adjust to your user chat interface
         });
         
         return { session, botResponse: savedReply, escalated: true };
@@ -154,6 +168,14 @@ export const ChatEngineService = {
       await prisma.chatSession.update({
         where: { id: session.id },
         data: { status: ChatStatus.AWAITING_AGENT }
+      });
+
+      // 🟢 Persistent failover notification
+      NotificationService.sendToUser(userId, {
+        title: 'Support Escalation 🎫',
+        message: 'We experienced a system interruption, but an agent has been notified and will assist you shortly.',
+        type: 'WARNING',
+        link: `/dashboard/support`
       });
       
       return { session, botResponse: fallback, escalated: true };

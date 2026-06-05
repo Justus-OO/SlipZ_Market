@@ -1,4 +1,5 @@
-import prisma from '../db';
+import prisma from '../db.js';
+import { NotificationService } from './notification.service.js'; // 👈 Added Import
 
 export const FraudPreventionService = {
   async evaluateFailedPayments(userId: string) {
@@ -37,6 +38,16 @@ export const FraudPreventionService = {
               details: `${failedCount} failed payment attempts in 1 hour.`
             }
           }
+        });
+
+        // ==========================================
+        // 🔴 4. REAL-TIME ACCOUNT SUSPENSION ALERT
+        // ==========================================
+        NotificationService.sendToUser(userId, {
+          title: 'Account Suspended 🛑',
+          message: 'Your account has been restricted due to multiple failed payment attempts. Please contact support.',
+          type: 'ERROR',
+          link: '/support' // Optional: redirect them away from the checkout page
         });
 
         console.error(`🚨 DEFENSE ENGAGED: User ${user.email} permanently blacklisted for card testing.`);

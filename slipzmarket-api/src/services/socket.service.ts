@@ -8,7 +8,13 @@ export const SocketService = {
   init(server: HttpServer) {
     io = new SocketIOServer(server, {
       cors: {
-        origin: ['http://localhost:3000', 'http://localhost:5173'],
+        // Ensure these match your actual frontend URLs (including Render domains if deployed)
+        origin: [
+          'http://localhost:3000', 
+          'http://localhost:5173',
+          'https://slipz-market-1.onrender.com',
+          'https://slipz-market-2.onrender.com'
+        ],
         methods: ['GET', 'POST'],
         credentials: true
       }
@@ -29,48 +35,71 @@ export const SocketService = {
     });
 
     io.on('connection', (socket) => {
-      console.log(`🔌 New client connected: ${socket.id} (User: ${(socket as any).user.userId})`);
+      const userId = (socket as any).user.userId;
+      const userRole = (socket as any).user.role;
+      
+      console.log(`🔌 New client connected: ${socket.id} (User: ${userId})`);
 
-      // 1. Admin room for support staff
+      // ==========================================
+      // 🟢 1. GLOBAL USER ROOM (Crucial for Notifications)
+      // Every user auto-joins a room based on their ID.
+      // This allows NotificationService to target them anywhere in the app.
+      // ==========================================
+      socket.join(`user_${userId}`);
+      console.log(`📡 User ${userId} joined their global notification room: user_${userId}`);
+
+      // ==========================================
+      // 2. ADMIN SUPPORT ROOM
+      // ==========================================
       socket.on('join_admin_room', () => {
-        // Optionally verify if user is actually an admin
-        if ((socket as any).user.role === 'ADMIN') {
-          // Changed to match the notifyAdmins broadcast target
+        if (userRole === 'ADMIN') {
           socket.join('admin_room'); 
-          console.log(`🛡️ Admin joined support room`);
+          console.log(`🛡️ Admin ${userId} joined support room`);
         }
       });
 
-      // 2. User-specific room for private replies
+      // ==========================================
+      // 3. PRIVATE CHAT SESSION ROOM
+      // ==========================================
       socket.on('join_user_session', (sessionId: string) => {
         socket.join(`session_${sessionId}`);
-        console.log(`👤 User joined private room: session_${sessionId}`);
+        console.log(`👤 User joined private chat room: session_${sessionId}`);
       });
 
       socket.on('disconnect', () => {
-        console.log(`🔌 Client disconnected: ${socket.id}`);
+        console.log(`🔌 Client disconnected: ${socket.id} (User: ${userId})`);
       });
     });
 
     return io;
   },
 
-  // NEW: Sends an event to all connected admin dashboards
+  // ==========================================
+  // 🟢 NEW: Emit directly to a specific user (Used by NotificationService)
+  // ==========================================
+  emitToUser(userId: string, eventName: string, payload: any) {
+    if (io) {
+      io.to(`user_${userId}`).emit(eventName, payload);
+    } else {
+      console.error('Socket.io is not initialized! Cannot emit to user.');
+    }
+  },
+
+  // Sends an event to all connected admin dashboards (Used by Chat/Support)
   notifyAdmins(eventName: string, payload: any) {
     if (io) {
-      // Changed to broadcast to 'admin_room' to match the frontend connection
       io.to('admin_room').emit(eventName, payload); 
     } else {
       console.error('Socket.io is not initialized! Cannot notify admins.');
     }
   },
 
-  // Notify a specific user in their private session room
+  // Notify a specific user in their private chat session room
   notifyUser(sessionId: string, eventName: string, payload: any) {
     if (io) {
       io.to(`session_${sessionId}`).emit(eventName, payload);
     } else {
-      console.error('Socket.io is not initialized! Cannot notify user.');
+      console.error('Socket.io is not initialized! Cannot notify chat session.');
     }
   }
 };

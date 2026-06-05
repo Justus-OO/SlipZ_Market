@@ -3,6 +3,7 @@ import Sidebar from '../components/shared/Sidebar';
 import Header from '../components/shared/Header';
 import Footer from '../components/shared/Footer';
 import ChatWidget from '../components/shared/ChatWidget'; // <-- Import the new widget
+import ResponsiveContainer from '../components/shared/ResponsiveContainer';
 
 const MainLayout = ({ children }) => {
   return (
@@ -25,8 +26,10 @@ const MainLayout = ({ children }) => {
           {/* Scrollable Region */}
           <main className="flex-1 overflow-y-auto custom-scrollbar flex flex-col w-full relative scroll-smooth">
             <div className="flex-1 w-full pb-16 transition-all duration-300">
-              {children}
-            </div>
+                <ResponsiveContainer>
+                  {children}
+                </ResponsiveContainer>
+              </div>
             <Footer />
           </main>
         </div>

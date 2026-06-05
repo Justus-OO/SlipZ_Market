@@ -1,33 +1,38 @@
 import { Router } from 'express';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { OAuth2Client } from 'google-auth-library';
 import prisma from '../db.js';
-import type { Prisma } from '../generated/client/client.js';
-import { sendVerificationEmail } from '../utils/mailer.js';
+import jwt from 'jsonwebtoken';
+import { requireAuth } from './middleware/auth.middleware';
+import type { Prisma } from '../generated/client/client';
+import { sendVerificationEmail } from '../utils/mailer';
+import { CoreService } from '../services/core.services';
+import crypto from 'crypto';
 
 const router = Router();
 
 // ==========================================
 // ENVIRONMENT & CONFIGURATION
 // ==========================================
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) throw new Error('FATAL ERROR: JWT_SECRET is not defined.');
-
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+if (!GOOGLE_CLIENT_ID) throw new Error('FATAL ERROR: GOOGLE_CLIENT_ID is not defined.');
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
-const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 // ==========================================
-// VALIDATION SCHEMAS
+// VALIDATION SCHEMAS (Strict Mode)
 // ==========================================
 const registerSchema = z.object({
   firstName: z.string().trim().min(2).max(50),
   lastName: z.string().trim().min(2).max(50),
   email: z.string().trim().email(),
   companyName: z.string().trim().min(2).max(100),
-  password: z.string().min(8).max(100),
+  // Pro-grade password enforcement
+  password: z.string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Must contain at least one lowercase letter')
+    .regex(/[0-9]/, 'Must contain at least one number')
+    .regex(/[\W_]/, 'Must contain at least one special character'),
 });
 
 const loginSchema = z.object({
@@ -36,225 +41,203 @@ const loginSchema = z.object({
 });
 
 // ==========================================
-// STEP 1: SEND CODE (NO DATABASE SAVE YET)
+// STEP 1: SEND CODE (Stateless)
 // ==========================================
-router.post('/register', async (req, res) => {
-  try {
-    const validation = registerSchema.safeParse(req.body);
-    if (!validation.success) {
-      return res.status(400).json({ error: 'Validation failed', details: validation.error.flatten().fieldErrors });
-    }
-
-    const { firstName, lastName, email: rawEmail, companyName, password } = validation.data;
-    const email = rawEmail.toLowerCase();
-
-    // Ensure user doesn't already exist
-    const existingUser = await prisma.user.findUnique({ where: { email } });
-    if (existingUser) return res.status(400).json({ error: 'A user with this email already exists.' });
-
-    const salt = await bcrypt.genSalt(12);
-    const passwordHash = await bcrypt.hash(password, salt);
-    const otpCode = generateOTP();
-
-    // Send the email
-    await sendVerificationEmail(email, otpCode);
-
-    // Package all their details into a temporary JWT (Expires in 15 mins)
-    const pendingToken = jwt.sign(
-      { firstName, lastName, email, companyName, passwordHash, otpCode },
-      JWT_SECRET,
-      { expiresIn: '15m' }
-    );
-
-    // Give the token to the frontend so it can hold onto it
-    res.status(200).json({ 
-      message: 'Verification code sent. Please check your email.', 
-      pendingToken 
-    });
-
-  } catch (error) {
-    console.error('Registration Step 1 Error:', error);
-    res.status(500).json({ error: 'Failed to process registration or send email.' });
+router.post('/register', CoreService.catchAsync(async (req, res) => {
+  const validation = registerSchema.safeParse(req.body);
+  if (!validation.success) {
+    return CoreService.error(res, 400, 'Validation failed', validation.error.flatten().fieldErrors);
   }
-});
+
+  const { firstName, lastName, companyName, password } = validation.data;
+  const email = CoreService.normalizeEmail(validation.data.email);
+
+  // Ensure user doesn't already exist
+  const existingUser = await prisma.user.findUnique({ where: { email } });
+  if (existingUser) return CoreService.error(res, 400, 'A user with this email already exists.');
+
+  const passwordHash = await CoreService.hashPassword(password);
+  const otpCode = CoreService.generateOTP();
+
+  await sendVerificationEmail(email, otpCode);
+
+  // Package details into a short-lived token
+  const pendingToken = jwt.sign(
+    { firstName, lastName, email, companyName, passwordHash, otpCode },
+    process.env.JWT_SECRET!,
+    { expiresIn: '15m' }
+  );
+
+  return CoreService.success(res, 200, 'Verification code sent. Please check your email.', { pendingToken });
+}));
 
 // ==========================================
 // STEP 2: VERIFY CODE & COMPLETE REGISTRATION
 // ==========================================
-router.post('/verify', async (req, res) => {
+router.post('/verify', CoreService.catchAsync(async (req, res) => {
+  const { pendingToken, code } = req.body;
+  if (!pendingToken || !code) return CoreService.error(res, 400, 'Session expired or missing code.');
+
+  let decoded: any;
   try {
-    const { pendingToken, code } = req.body;
-    if (!pendingToken || !code) return res.status(400).json({ error: 'Session expired or missing code.' });
+    decoded = CoreService.verifyAuthToken(pendingToken);
+  } catch (err) {
+    return CoreService.error(res, 400, 'Verification session expired. Please register again.');
+  }
 
-    // 1. Decode and verify the temporary token
-    let decoded: any;
-    try {
-      decoded = jwt.verify(pendingToken, JWT_SECRET);
-    } catch (err) {
-      return res.status(400).json({ error: 'Verification session expired. Please register again.' });
-    }
+  if (decoded.otpCode !== code) {
+    return CoreService.error(res, 400, 'Invalid verification code.');
+  }
 
-    // 2. Check if the code matches
-    if (decoded.otpCode !== code) {
-      return res.status(400).json({ error: 'Invalid verification code.' });
-    }
+  const existingUser = await prisma.user.findUnique({ where: { email: decoded.email } });
+  if (existingUser) return CoreService.error(res, 400, 'User is already registered.');
 
-    // 3. Double-check user doesn't exist just in case
-    const existingUser = await prisma.user.findUnique({ where: { email: decoded.email } });
-    if (existingUser) return res.status(400).json({ error: 'User is already registered.' });
+  const user = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    
+    // STRICT 1-ADMIN RULE: Check if an admin already exists globally
+    const adminExists = await tx.user.findFirst({ where: { role: 'ADMIN' } });
+    const assignedRole = adminExists ? 'USER' : 'ADMIN';
 
-    // 4. NOW WE SAVE TO THE DATABASE
-    const user = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // Safely upsert the workspace so it never crashes on duplicate names
-      const workspace = await tx.workspace.upsert({
-        where: { name: decoded.companyName },
-        update: {},
-        create: { name: decoded.companyName },
-      });
-
-      return await tx.user.create({
-        data: {
-          firstName: decoded.firstName,
-          lastName: decoded.lastName,
-          email: decoded.email,
-          passwordHash: decoded.passwordHash,
-          workspaceId: workspace.id,
-          role: 'ADMIN',
-          isVerified: true, // They are fully verified upon creation!
-        },
-      });
+    // FIX: Secure workspace creation (Prevent Hijacking)
+    // Append a short hash to guarantee uniqueness if the DB requires unique names
+    const safeWorkspaceName = `${decoded.companyName}#${crypto.randomBytes(2).toString('hex')}`;
+    
+    const workspace = await tx.workspace.create({
+      data: { name: safeWorkspaceName },
     });
 
-    // 5. Generate actual login token
-    const token = jwt.sign(
-      { userId: user.id, workspaceId: user.workspaceId, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    return await tx.user.create({
+      data: {
+        firstName: decoded.firstName,
+        lastName: decoded.lastName,
+        email: decoded.email,
+        passwordHash: decoded.passwordHash,
+        workspaceId: workspace.id,
+        role: assignedRole,
+        isVerified: true, 
+      },
+    });
+  });
 
-    res.status(201).json({ message: 'Registration complete!', token, user: { id: user.id, email: user.email, firstName: user.firstName } });
+  const token = CoreService.generateAuthToken({ id: user.id, workspaceId: user.workspaceId, role: user.role });
 
-  } catch (error) {
-    console.error('Verification Error:', error);
-    res.status(500).json({ error: 'An unexpected error occurred during verification.' });
-  }
-});
+  return CoreService.success(res, 201, 'Registration complete!', { 
+    token, 
+    user: { id: user.id, email: user.email, firstName: user.firstName, role: user.role } 
+  });
+}));
 
 // ==========================================
-// RESEND OTP (Stateless Version)
+// RESEND OTP 
 // ==========================================
-router.post('/resend-otp', async (req, res) => {
-  try {
-    const { pendingToken } = req.body;
-    if (!pendingToken) return res.status(400).json({ error: 'Session expired. Please register again.' });
+router.post('/resend-otp', CoreService.catchAsync(async (req, res) => {
+  const { pendingToken } = req.body;
+  if (!pendingToken) return CoreService.error(res, 400, 'Session expired. Please register again.');
 
-    // Decode ignoring expiration so they can request a new code even if 15 mins passed
-    const decoded = jwt.verify(pendingToken, JWT_SECRET, { ignoreExpiration: true }) as any;
-    const otpCode = generateOTP();
+  const decoded = jwt.verify(pendingToken, process.env.JWT_SECRET!, { ignoreExpiration: true }) as any;
+  const otpCode = CoreService.generateOTP();
 
-    await sendVerificationEmail(decoded.email, otpCode);
+  await sendVerificationEmail(decoded.email, otpCode);
 
-    // Issue a fresh token with the new code
-    const newPendingToken = jwt.sign(
-      { ...decoded, otpCode },
-      JWT_SECRET,
-      { expiresIn: '15m' }
-    );
+  const newPendingToken = jwt.sign(
+    { ...decoded, otpCode },
+    process.env.JWT_SECRET!,
+    { expiresIn: '15m' }
+  );
 
-    res.status(200).json({ message: 'A new verification code has been sent.', pendingToken: newPendingToken });
-  } catch (error) {
-    console.error('Resend OTP Error:', error);
-    res.status(500).json({ error: 'Failed to resend OTP.' });
-  }
-});
+  return CoreService.success(res, 200, 'A new verification code has been sent.', { pendingToken: newPendingToken });
+}));
 
 // ==========================================
 // STANDARD LOGIN
 // ==========================================
-router.post('/login', async (req, res) => {
+router.post('/login', CoreService.catchAsync(async (req, res) => {
+  // DEBUG: log incoming request structure (do NOT print raw passwords)
   try {
-    const validation = loginSchema.safeParse(req.body);
-    if (!validation.success) return res.status(400).json({ error: 'Invalid credentials.' });
-
-    const { email: rawEmail, password } = validation.data;
-    const email = rawEmail.toLowerCase();
-
-    const user = await prisma.user.findUnique({ where: { email } });
-    
-    if (!user || !user.passwordHash) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.passwordHash);
-    if (!isMatch) return res.status(401).json({ error: 'Invalid email or password.' });
-
-    const token = jwt.sign(
-      { userId: user.id, workspaceId: user.workspaceId, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.status(200).json({ message: 'Logged in successfully', token, user: { id: user.id, email: user.email, firstName: user.firstName } });
-  } catch (error) {
-    console.error('Login Error:', error);
-    res.status(500).json({ error: 'An unexpected error occurred.' });
+    const keys = Object.keys(req.body || {});
+    const passwordPresent = typeof req.body?.password === 'string' && req.body.password.length > 0;
+    // eslint-disable-next-line no-console
+    console.log('[AUTH] /login attempt — keys:', keys.join(','), 'email:', req.body?.email, 'passwordPresent:', passwordPresent);
+  } catch (logErr) {
+    // eslint-disable-next-line no-console
+    console.warn('[AUTH] /login debug log failed', logErr);
   }
-});
+
+  const validation = loginSchema.safeParse(req.body);
+  if (!validation.success) return CoreService.error(res, 400, 'Invalid credentials.');
+
+  const email = CoreService.normalizeEmail(validation.data.email);
+  const user = await prisma.user.findUnique({ where: { email } });
+  
+  if (!user || !user.passwordHash) {
+    return CoreService.error(res, 401, 'Invalid email or password.');
+  }
+
+  const isMatch = await CoreService.verifyPassword(validation.data.password, user.passwordHash);
+  if (!isMatch) return CoreService.error(res, 401, 'Invalid email or password.');
+
+  const token = CoreService.generateAuthToken({ id: user.id, workspaceId: user.workspaceId, role: user.role });
+
+  return CoreService.success(res, 200, 'Logged in successfully', { 
+    token, 
+    user: { id: user.id, email: user.email, firstName: user.firstName, role: user.role } 
+  });
+}));
 
 // ==========================================
 // GOOGLE SSO
 // ==========================================
-router.post('/google', async (req, res) => {
-  try {
-    const { token } = req.body;
-    if (!token) return res.status(400).json({ error: 'Google token is required' });
+router.post('/google', CoreService.catchAsync(async (req, res) => {
+  const { token } = req.body;
+  if (!token) return CoreService.error(res, 400, 'Google token is required');
 
-    const ticket = await googleClient.verifyIdToken({
-      idToken: token,
-      audience: GOOGLE_CLIENT_ID, 
-    });
+  const ticket = await googleClient.verifyIdToken({
+    idToken: token,
+    audience: GOOGLE_CLIENT_ID, 
+  });
 
-    const payload = ticket.getPayload();
-    if (!payload || !payload.email) return res.status(400).json({ error: 'Invalid Google token' });
+  const payload = ticket.getPayload();
+  if (!payload || !payload.email) return CoreService.error(res, 400, 'Invalid Google token');
 
-    const email = payload.email.toLowerCase();
-    const firstName = payload.given_name || 'User';
-    const lastName = payload.family_name || '';
+  const email = CoreService.normalizeEmail(payload.email);
+  const firstName = payload.given_name || 'User';
+  const lastName = payload.family_name || '';
 
-    let user = await prisma.user.findUnique({ where: { email } });
+  let user = await prisma.user.findUnique({ where: { email } });
 
-    if (!user) {
-      user = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const workspace = await tx.workspace.upsert({
-          where: { name: `${firstName}'s Workspace` },
-          update: {},
-          create: { name: `${firstName}'s Workspace` }
-        });
+  if (!user) {
+    user = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      
+      // STRICT 1-ADMIN RULE
+      const adminExists = await tx.user.findFirst({ where: { role: 'ADMIN' } });
+      const assignedRole = adminExists ? 'USER' : 'ADMIN';
 
-        return await tx.user.create({
-          data: {
-            firstName,
-            lastName,
-            email,
-            workspaceId: workspace.id,
-            role: 'ADMIN',
-            isVerified: true, 
-          },
-        });
+      // FIX: Secure workspace creation
+      const safeWorkspaceName = `${firstName}'s Workspace#${crypto.randomBytes(2).toString('hex')}`;
+
+      const workspace = await tx.workspace.create({
+        data: { name: safeWorkspaceName }
       });
-    }
 
-    const jwtToken = jwt.sign(
-      { userId: user.id, workspaceId: user.workspaceId, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.status(200).json({ message: 'Google authentication successful', token: jwtToken, user: { id: user.id, email: user.email, firstName: user.firstName } });
-  } catch (error) {
-    console.error('Google Auth Error:', error);
-    res.status(500).json({ error: 'Failed to authenticate with Google' });
+      return await tx.user.create({
+        data: {
+          firstName,
+          lastName,
+          email,
+          workspaceId: workspace.id,
+          role: assignedRole,
+          isVerified: true, 
+        },
+      });
+    });
   }
-});
+
+  const jwtToken = CoreService.generateAuthToken({ id: user.id, workspaceId: user.workspaceId, role: user.role });
+
+  return CoreService.success(res, 200, 'Google authentication successful', { 
+    token: jwtToken, 
+    user: { id: user.id, email: user.email, firstName: user.firstName, role: user.role } 
+  });
+}));
 
 export default router;
