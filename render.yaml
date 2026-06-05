@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: slipz-market
+    env: docker
+    envVars:
+      - key: VITE_API_URL
+        value: https://slipz-market-1.onrender.com/api
+    # This ensures the variable is available during the npm run build phase
+    buildFilter:
+      paths:
+        - slipzmarket-frontend/**
+        - slipzmarket-api/**
