@@ -59,4 +59,4 @@ RUN ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
 EXPOSE 80
 
 # 4. Clean execution: Explicitly use shell array syntax to prevent Status 128 crashes
-CMD ["/bin/sh", "-c", "service nginx start && node api/dist/index.js"]
+CMD ["/bin/sh", "-c", "service nginx start && PORT=5000 node api/dist/index.js"]
