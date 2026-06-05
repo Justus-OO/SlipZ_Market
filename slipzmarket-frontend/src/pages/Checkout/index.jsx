@@ -93,7 +93,7 @@ const Checkout = () => {
         
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-[#3b2a23]">
+            <h1 className="text-2xl font-bold tracking-tight text-[#3b2a23]">
               {t('checkoutTitle')}
             </h1>
             <p className="text-[14px] font-medium text-[#8b6f5a] mt-1">{t('checkoutSubtitle')}</p>

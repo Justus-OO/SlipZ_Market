@@ -334,10 +334,10 @@ const Cart = () => {
           <div className="absolute top-0 left-0 w-full h-2 bg-emerald-500" />
           
           <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 ring-8 ring-emerald-50/50">
-            <CheckCircle2 size={40} />
+            <CheckCircle2 size={32} />
           </div>
           
-          <h2 className="text-3xl font-black text-[#2a1b1b] tracking-tight">Payment Verified</h2>
+          <h2 className="text-2xl font-black text-[#2a1b1b] tracking-tight">Payment Verified</h2>
           <p className="text-[#7a6b6b] text-[15px] mt-3 leading-relaxed">
             Your transaction was successful. We've sent a confirmation email to <strong className="text-[#2a1b1b]">{successData.email}</strong>.
           </p>

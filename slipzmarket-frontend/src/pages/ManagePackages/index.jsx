@@ -474,7 +474,7 @@ const ManagePackages = () => {
                 {filteredPackages.length === 0 ? (
                   <tr>
                     <td colSpan="5" className="px-6 py-12 text-center">
-                      <Database size={32} className="mx-auto text-[#d6c9b8] mb-3" />
+                      <Database size={24} className="mx-auto text-[#d6c9b8] mb-3" />
                       <p className="text-[#3b2a23] font-bold text-[14px]">{t('noPackagesFound', 'No packages found')}</p>
                       <p className="text-[#8b6f5a] text-[13px] mt-1">{t('adjustFilters', 'Try adjusting your search or filters')}</p>
                     </td>

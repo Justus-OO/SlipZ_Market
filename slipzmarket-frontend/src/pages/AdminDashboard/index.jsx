@@ -199,7 +199,7 @@ const AdminDashboard = () => {
   if (isLoading) {
     return (
       <div className="flex flex-col h-full min-h-screen bg-app font-sans items-center justify-center">
-        <Loader2 size={40} className="animate-spin text-[#8b6f5a] mb-4" />
+        <Loader2 size={32} className="animate-spin text-[#8b6f5a] mb-4" />
         <p className="text-[#3b2a23] font-bold">Loading Dashboard Assets...</p>
       </div>
     );
@@ -544,7 +544,7 @@ const AdminDashboard = () => {
           <div className="absolute inset-0 bg-[#3b2a23]/60 backdrop-blur-sm animate-fade-in" onClick={() => setIsWorkspaceModalOpen(false)} />
           <div className="relative bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col animate-fade-in-up border border-[#d6c9b8] p-8 text-center items-center">
             <div className="w-16 h-16 bg-[#faf6f0] border border-[#d6c9b8] rounded-2xl flex items-center justify-center text-[#8b6f5a] mb-6">
-              <UserCog size={32} />
+              <UserCog size={24} />
             </div>
             <h3 className="text-[20px] font-bold text-[#3b2a23] mb-2">Workspace CRM</h3>
             <p className="text-[14px] text-[#8b6f5a] mb-8 font-medium">

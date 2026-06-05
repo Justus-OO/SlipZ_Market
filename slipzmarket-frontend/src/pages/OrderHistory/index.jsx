@@ -442,7 +442,7 @@ const OrderHistory = () => {
                 {isLoading ? (
                   <tr>
                     <td colSpan="6" className="px-6 py-16 text-center">
-                      <Loader2 size={32} className="mx-auto text-[#8b6f5a] mb-3 animate-spin" />
+                      <Loader2 size={24} className="mx-auto text-[#8b6f5a] mb-3 animate-spin" />
                       <p className="text-[#3b2a23] font-bold">Loading invoice history...</p>
                       <p className="text-[#8b6f5a] text-[13px] mt-1">Please wait while we fetch your billing records.</p>
                     </td>
@@ -450,7 +450,7 @@ const OrderHistory = () => {
                 ) : processedOrders.length === 0 ? (
                   <tr>
                     <td colSpan="6" className="px-6 py-16 text-center">
-                      <FileText size={32} className="mx-auto text-[#d6c9b8] mb-3" />
+                      <FileText size={24} className="mx-auto text-[#d6c9b8] mb-3" />
                       <p className="text-[#3b2a23] font-bold">{t('noTransactionsFound')}</p>
                       <p className="text-[#8b6f5a] text-[13px] mt-1">{t('tryAdjusting')}</p>
                     </td>

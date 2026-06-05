@@ -144,7 +144,7 @@ const Account = () => {
     { id: 'notifications', label: t('notificationsTab'), icon: <Bell size={16} /> },
   ];
 
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 size={32} className="animate-spin text-[#800000]" /></div>;
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 size={24} className="animate-spin text-[#800000]" /></div>;
 
   return (
     <div className="flex flex-col h-full min-h-screen bg-[#f9fafb] font-sans pb-16 selection:bg-[#800000] selection:text-white">
@@ -325,7 +325,7 @@ const Account = () => {
                     </div>
                     <button 
                       onClick={() => handleToggle('twoFactor', 'twoFactorEnabled')}
-                      className={`text-[36px] transition-colors ${toggles.twoFactor ? 'text-emerald-600' : 'text-[#d8cdcd]'}`}
+                      className={`text-[28px] transition-colors ${toggles.twoFactor ? 'text-emerald-600' : 'text-[#d8cdcd]'}`}
                     >
                       {toggles.twoFactor ? <ToggleRight fontSize="inherit" /> : <ToggleLeft fontSize="inherit" />}
                     </button>
@@ -368,7 +368,7 @@ const Account = () => {
                     <h4 className="text-[14px] font-bold text-[#2a1b1b]">Login Alerts</h4>
                     <p className="text-[12px] text-[#7a6b6b] mt-0.5">Receive an email when a new device signs in.</p>
                   </div>
-                  <button onClick={() => handleToggle('loginAlerts', 'loginAlerts')} className={`text-[32px] transition-colors ${toggles.loginAlerts ? 'text-[#800000]' : 'text-[#d8cdcd]'}`}>
+                  <button onClick={() => handleToggle('loginAlerts', 'loginAlerts')} className={`text-[24px] transition-colors ${toggles.loginAlerts ? 'text-[#800000]' : 'text-[#d8cdcd]'}`}>
                     {toggles.loginAlerts ? <ToggleRight fontSize="inherit" /> : <ToggleLeft fontSize="inherit" />}
                   </button>
                 </div>
@@ -378,7 +378,7 @@ const Account = () => {
                     <h4 className="text-[14px] font-bold text-[#2a1b1b]">Export Completions</h4>
                     <p className="text-[12px] text-[#7a6b6b] mt-0.5">Receive an email with a download link when your CSV is ready.</p>
                   </div>
-                  <button onClick={() => handleToggle('exportAlerts', 'exportAlerts')} className={`text-[32px] transition-colors ${toggles.exportAlerts ? 'text-[#800000]' : 'text-[#d8cdcd]'}`}>
+                  <button onClick={() => handleToggle('exportAlerts', 'exportAlerts')} className={`text-[24px] transition-colors ${toggles.exportAlerts ? 'text-[#800000]' : 'text-[#d8cdcd]'}`}>
                     {toggles.exportAlerts ? <ToggleRight fontSize="inherit" /> : <ToggleLeft fontSize="inherit" />}
                   </button>
                 </div>
@@ -388,7 +388,7 @@ const Account = () => {
                     <h4 className="text-[14px] font-bold text-[#2a1b1b]">Marketing & Promotions</h4>
                     <p className="text-[12px] text-[#7a6b6b] mt-0.5">Updates on new dataset releases and feature announcements.</p>
                   </div>
-                  <button onClick={() => handleToggle('marketingEmails', 'marketingEmails')} className={`text-[32px] transition-colors ${toggles.marketingEmails ? 'text-[#800000]' : 'text-[#d8cdcd]'}`}>
+                  <button onClick={() => handleToggle('marketingEmails', 'marketingEmails')} className={`text-[24px] transition-colors ${toggles.marketingEmails ? 'text-[#800000]' : 'text-[#d8cdcd]'}`}>
                     {toggles.marketingEmails ? <ToggleRight fontSize="inherit" /> : <ToggleLeft fontSize="inherit" />}
                   </button>
                 </div>
@@ -401,7 +401,7 @@ const Account = () => {
           {(activeTab === 'workspace' || activeTab === 'billing') && (
             <div className="animate-fade-in flex flex-col gap-6">
               <div className="bg-white border border-[#d8cdcd] rounded-xl shadow-sm overflow-hidden p-12 text-center flex flex-col items-center justify-center">
-                 <Building2 size={40} className="text-[#d8cdcd] mb-4" />
+                 <Building2 size={28} className="text-[#d8cdcd] mb-4" />
                  <h2 className="text-[18px] font-bold text-[#2a1b1b]">Workspace Administration</h2>
                  <p className="text-[14px] text-[#7a6b6b] mt-2 max-w-sm">Contact your primary workspace administrator to manage billing methods, update company details, or purchase additional export credits.</p>
               </div>

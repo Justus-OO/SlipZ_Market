@@ -318,7 +318,7 @@ const ManageInvoices = () => {
                 {filteredInvoices.length === 0 ? (
                   <tr>
                     <td colSpan="6" className="px-6 py-12 text-center">
-                      <Receipt size={32} className="mx-auto text-[#d6c9b8] mb-3" />
+                      <Receipt size={24} className="mx-auto text-[#d6c9b8] mb-3" />
                       <p className="text-[#3b2a23] font-bold text-[14px]">{t('noInvoicesFound')}</p>
                       <p className="text-[#8b6f5a] text-[13px] mt-1">{t('adjustSearchOrCreate')}</p>
                     </td>

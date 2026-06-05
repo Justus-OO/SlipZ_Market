@@ -254,7 +254,7 @@ const BrowseLeads = () => {
                   {isLoading ? (
                     <tr>
                       <td colSpan="7" className="px-5 py-12 text-center text-[#8b6f5a]">
-                        <Loader2 size={32} className="animate-spin mx-auto mb-3" />
+                        <Loader2 size={24} className="animate-spin mx-auto mb-3" />
                         <span className="text-[14px] font-bold">Loading Datasets...</span>
                       </td>
                     </tr>

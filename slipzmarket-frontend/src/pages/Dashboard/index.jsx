@@ -307,7 +307,7 @@ const Dashboard = () => {
                   <div className="w-8 h-8 bg-[#800000]/10 text-[#800000] rounded-lg flex items-center justify-center"><DatabaseIcon size={16} /></div>
                   <h4 className="text-[13px] font-bold text-[#7a6b6b] uppercase tracking-wider">Total Lists</h4>
                 </div>
-                <p className="text-3xl font-black text-[#2a1b1b]">{totalLists}</p>
+                <p className="text-2xl font-black text-[#2a1b1b]">{totalLists}</p>
               </div>
 
               <div className="bg-white border border-[#d8cdcd] rounded-xl p-5 shadow-sm flex flex-col">
@@ -315,7 +315,7 @@ const Dashboard = () => {
                   <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center"><Users size={16} /></div>
                   <h4 className="text-[13px] font-bold text-[#7a6b6b] uppercase tracking-wider">Saved Contacts</h4>
                 </div>
-                <p className="text-3xl font-black text-[#2a1b1b]">{totalContactsSaved.toLocaleString()}</p>
+                <p className="text-2xl font-black text-[#2a1b1b]">{totalContactsSaved.toLocaleString()}</p>
               </div>
 
               <div className="bg-white border border-[#d8cdcd] rounded-xl p-5 shadow-sm flex flex-col">
@@ -323,16 +323,16 @@ const Dashboard = () => {
                   <div className="w-8 h-8 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center"><Download size={16} /></div>
                   <h4 className="text-[13px] font-bold text-[#7a6b6b] uppercase tracking-wider">Total Exported</h4>
                 </div>
-                <p className="text-3xl font-black text-[#2a1b1b]">{stats?.exportCreditsUsed.toLocaleString() || 0}</p>
+                <p className="text-2xl font-black text-[#2a1b1b]">{stats?.exportCreditsUsed.toLocaleString() || 0}</p>
               </div>
 
               <div className="bg-white border border-[#800000] rounded-xl p-5 shadow-md flex flex-col relative overflow-hidden">
-                <div className="absolute -right-4 -top-4 opacity-5"><CreditCard size={100} /></div>
+                <div className="absolute -right-4 -top-4 opacity-5"><CreditCard size={32} /></div>
                 <div className="flex items-center gap-3 mb-3 relative z-10">
                   <div className="w-8 h-8 bg-[#800000] text-white rounded-lg flex items-center justify-center"><Zap size={16} /></div>
                   <h4 className="text-[13px] font-bold text-[#800000] uppercase tracking-wider">Credits Left</h4>
                 </div>
-                <p className="text-3xl font-black text-[#2a1b1b] relative z-10">{creditsRemaining.toLocaleString()}</p>
+                <p className="text-2xl font-black text-[#2a1b1b] relative z-10">{creditsRemaining.toLocaleString()}</p>
               </div>
             </div>
 
@@ -478,7 +478,7 @@ const Dashboard = () => {
                       <tr>
                         <td colSpan="7" className="px-4 py-16 text-center">
                           <div className="flex flex-col items-center justify-center">
-                            <DatabaseIcon size={40} className="text-[#d8cdcd] mb-3" />
+                            <DatabaseIcon size={28} className="text-[#d8cdcd] mb-3" />
                             <h3 className="text-[16px] font-bold text-[#2a1b1b] mb-1">No lists found</h3>
                             <p className="text-[13px] text-[#7a6b6b] mb-4">{searchQuery ? `No results matching "${searchQuery}"` : "You haven't built any lead lists yet."}</p>
                             {!searchQuery && (
@@ -545,7 +545,7 @@ const Dashboard = () => {
             </div>
             {exportHistory.length === 0 ? (
               <div className="p-12 text-center flex flex-col items-center justify-center">
-                <Download size={48} className="text-[#d8cdcd] mb-4" />
+                <Download size={32} className="text-[#d8cdcd] mb-4" />
                 <p className="text-[#7a6b6b] text-sm">You haven't initiated any file downloads yet.</p>
               </div>
             ) : (
@@ -576,7 +576,7 @@ const Dashboard = () => {
         {/* TAB 4: ENRICHMENT JOBS */}
         {activeTab === 'Enrichment Jobs' && (
           <div className="animate-fade-in bg-white border border-[#d8cdcd] rounded-xl p-12 shadow-sm flex flex-col items-center justify-center text-center">
-             <Zap size={48} className="text-[#d8cdcd] mb-4" />
+             <Zap size={32} className="text-[#d8cdcd] mb-4" />
              <h3 className="text-lg font-bold text-[#2a1b1b]">No records found</h3>
              <p className="text-[#7a6b6b] text-sm max-w-md mt-2">You haven't initiated any enrichment jobs yet.</p>
           </div>
@@ -585,7 +585,7 @@ const Dashboard = () => {
         {/* TAB 5: BILLING */}
         {activeTab === 'Billing' && (
           <div className="animate-fade-in bg-white border border-[#d8cdcd] rounded-xl p-12 shadow-sm flex flex-col items-center justify-center text-center">
-             <CreditCard size={48} className="text-[#d8cdcd] mb-4" />
+             <CreditCard size={32} className="text-[#d8cdcd] mb-4" />
              <h3 className="text-lg font-bold text-[#2a1b1b]">Subscription & Billing</h3>
              <p className="text-[#7a6b6b] text-sm max-w-md mt-2">Manage your current plan, view invoice history, and purchase additional export credits via Stripe.</p>
              <button className="mt-6 bg-[#2a1b1b] text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-sm hover:bg-black transition-colors">

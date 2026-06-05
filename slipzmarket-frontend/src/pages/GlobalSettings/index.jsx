@@ -229,7 +229,7 @@ const GlobalSettings = () => {
           type="button" onClick={() => handleChange('maintenanceMode', !config.maintenanceMode)}
           className={`transition-colors ${config.maintenanceMode ? 'text-amber-600' : 'text-muted hover:text-accent'}`}
         >
-          {config.maintenanceMode ? <ToggleRight size={40} /> : <ToggleLeft size={40} />}
+          {config.maintenanceMode ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
         </button>
       </div>
     </div>
@@ -364,7 +364,7 @@ const GlobalSettings = () => {
             type="button" onClick={() => handleChange('require2FA', !config.require2FA)}
             className={`transition-colors ${config.require2FA ? 'text-emerald-600' : 'text-[#d6c9b8] hover:text-[#800000]'}`}
           >
-            {config.require2FA ? <ToggleRight size={40} /> : <ToggleLeft size={40} />}
+            {config.require2FA ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
           </button>
         </div>
 

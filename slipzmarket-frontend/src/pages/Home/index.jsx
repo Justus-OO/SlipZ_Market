@@ -32,7 +32,7 @@ const Home = () => {
       {/* --- PUBLIC NAVBAR --- */}
       <nav className="w-full px-6 lg:px-10 py-4 flex items-center justify-between border-b border-theme bg-app/90 backdrop-blur-md sticky top-0 z-50 transition-all">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
-          <Asterisk size={28} strokeWidth={3} className="text-muted" />
+          <Asterisk size={20} strokeWidth={3} className="text-muted" />
           <span className="text-[18px] sm:text-xl font-bold text-primary tracking-tight">
             SlipZMarket
           </span>
@@ -85,11 +85,11 @@ const Home = () => {
           Introducing Advanced Intent Data Signals <ArrowRight size={12} />
         </div>
         
-        <h1 className="text-4xl md:text-6xl lg:text-[72px] font-black text-primary tracking-tight leading-[1.05] mb-6 max-w-4xl">
+        <h1 className="text-2xl md:text-4xl lg:text-[48px] font-black text-primary tracking-tight leading-[1.05] mb-6 max-w-4xl">
           Find, contact, and close your ideal buyers.
         </h1>
         
-        <p className="text-[16px] md:text-[20px] text-muted font-medium max-w-2xl mx-auto mb-10 leading-relaxed">
+        <p className="text-[15px] md:text-[18px] text-muted font-medium max-w-2xl mx-auto mb-10 leading-relaxed">
           Access a living database of over 275M+ contacts and 73M+ companies. Build highly targeted lists and engage them directly.
         </p>
 
@@ -122,10 +122,10 @@ const Home = () => {
         <div className="mt-20 pt-10 border-t border-theme w-full flex flex-col items-center gap-6">
           <p className="text-[13px] font-bold text-muted uppercase tracking-widest">Trusted by over 500,000 revenue professionals</p>
           <div className="flex flex-wrap justify-center items-center gap-x-12 gap-y-8 opacity-60 grayscale hover:grayscale-0 transition-all duration-500">
-            <div className="flex items-center gap-2 text-2xl font-black tracking-tighter text-primary"><Building2 size={24}/> AcmeCorp</div>
-            <div className="flex items-center gap-2 text-2xl font-black tracking-tighter text-primary"><Zap size={24}/> GlobalTech</div>
-            <div className="flex items-center gap-2 text-2xl font-black tracking-tighter text-primary"><ShieldCheck size={24}/> NexusHealth</div>
-            <div className="flex items-center gap-2 text-2xl font-black tracking-tighter text-primary"><Database size={24}/> Stark Ind.</div>
+            <div className="flex items-center gap-2 text-xl font-black tracking-tighter text-primary"><Building2 size={20}/> AcmeCorp</div>
+            <div className="flex items-center gap-2 text-xl font-black tracking-tighter text-primary"><Zap size={20}/> GlobalTech</div>
+            <div className="flex items-center gap-2 text-xl font-black tracking-tighter text-primary"><ShieldCheck size={20}/> NexusHealth</div>
+            <div className="flex items-center gap-2 text-xl font-black tracking-tighter text-primary"><Database size={20}/> Stark Ind.</div>
           </div>
         </div>
       </main>
@@ -134,15 +134,15 @@ const Home = () => {
       <section className="bg-primary py-16 px-6">
         <div className="max-w-[1200px] mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 divide-y md:divide-y-0 md:divide-x divide-theme/20">
           <div className="flex flex-col items-center text-center pt-8 md:pt-0">
-            <h3 className="text-5xl font-black text-surface mb-2 tracking-tight">275M+</h3>
+            <h3 className="text-2xl font-black text-surface mb-2 tracking-tight">275M+</h3>
             <p className="text-[15px] font-medium text-muted">Verified global contacts</p>
           </div>
           <div className="flex flex-col items-center text-center pt-8 md:pt-0">
-            <h3 className="text-5xl font-black text-surface mb-2 tracking-tight">73M+</h3>
+            <h3 className="text-2xl font-black text-surface mb-2 tracking-tight">73M+</h3>
             <p className="text-[15px] font-medium text-muted">Company profiles</p>
           </div>
           <div className="flex flex-col items-center text-center pt-8 md:pt-0">
-            <h3 className="text-5xl font-black text-surface mb-2 tracking-tight">98%</h3>
+            <h3 className="text-2xl font-black text-surface mb-2 tracking-tight">98%</h3>
             <p className="text-[15px] font-medium text-muted">Email deliverability guarantee</p>
           </div>
         </div>
@@ -152,14 +152,14 @@ const Home = () => {
       <section className="bg-surface py-24 px-6 relative">
         <div className="max-w-[1200px] mx-auto">
           <div className="text-center mb-16 max-w-3xl mx-auto">
-            <h2 className="text-3xl md:text-4xl font-black text-primary tracking-tight mb-4">The only platform you need to power your go-to-market.</h2>
+            <h2 className="text-2xl md:text-3xl font-black text-primary tracking-tight mb-4">The only platform you need to power your go-to-market.</h2>
             <p className="text-[16px] text-muted font-medium">Replace your fragmented tech stack. SlipZMarket gives you the data, engagement tools, and analytics to scale revenue fast.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="bg-surface border border-theme rounded-3xl p-8 hover:-translate-y-1 hover:shadow-xl transition-all duration-300">
               <div className="w-14 h-14 bg-surface border border-theme rounded-2xl flex items-center justify-center mb-6 shadow-sm">
-                <Users size={28} className="text-muted" />
+                <Users size={20} className="text-muted" />
               </div>
               <h3 className="text-[20px] font-bold text-primary mb-3 tracking-tight">Find exactly who to target</h3>
               <p className="text-[15px] text-muted font-medium leading-relaxed mb-6">
@@ -172,7 +172,7 @@ const Home = () => {
 
             <div className="bg-surface border border-theme rounded-3xl p-8 hover:-translate-y-1 hover:shadow-xl transition-all duration-300">
               <div className="w-14 h-14 bg-surface border border-theme rounded-2xl flex items-center justify-center mb-6 shadow-sm">
-                <Mail size={28} className="text-muted" />
+                <Mail size={20} className="text-muted" />
               </div>
               <h3 className="text-[20px] font-bold text-primary mb-3 tracking-tight">Engage at scale</h3>
               <p className="text-[15px] text-muted font-medium leading-relaxed mb-6">
@@ -185,7 +185,7 @@ const Home = () => {
 
             <div className="bg-surface border border-theme rounded-3xl p-8 hover:-translate-y-1 hover:shadow-xl transition-all duration-300">
               <div className="w-14 h-14 bg-surface border border-theme rounded-2xl flex items-center justify-center mb-6 shadow-sm">
-                <BarChart3 size={28} className="text-muted" />
+                <BarChart3 size={20} className="text-muted" />
               </div>
               <h3 className="text-[20px] font-bold text-primary mb-3 tracking-tight">Close more deals</h3>
               <p className="text-[15px] text-muted font-medium leading-relaxed mb-6">
@@ -206,7 +206,7 @@ const Home = () => {
         <div className="absolute bottom-0 left-0 -mb-20 -ml-20 w-80 h-80 bg-primary/20 rounded-full blur-3xl"></div>
 
         <div className="max-w-4xl mx-auto text-center relative z-10">
-          <h2 className="text-3xl md:text-5xl font-black text-surface tracking-tight mb-6">Ready to hit your revenue goals?</h2>
+          <h2 className="text-2xl md:text-4xl font-black text-surface tracking-tight mb-6">Ready to hit your revenue goals?</h2>
           <p className="text-[16px] md:text-[18px] text-surface font-medium mb-10">
             Join the hundreds of thousands of companies using SlipZMarket to fuel their growth. Set up takes less than 2 minutes.
           </p>

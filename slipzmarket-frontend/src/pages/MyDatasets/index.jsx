@@ -779,9 +779,7 @@ const MyDatasets = () => {
 
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm z-10">
 
-              <Loader2 className="animate-spin text-[#800000] mb-3" size={32} />
-
-              <p className="text-[14px] font-bold text-[#7a6b6b]">Loading records...</p>
+              <Loader2 className="animate-spin text-[#800000] mb-3" size={24} />
 
             </div>
 
@@ -997,7 +995,7 @@ const MyDatasets = () => {
 
           <div className="p-12 flex justify-center">
 
-            <Loader2 className="animate-spin text-[#800000]" size={32} />
+            <Loader2 className="animate-spin text-[#800000]" size={24} />
 
           </div>
 
@@ -1005,11 +1003,7 @@ const MyDatasets = () => {
 
           <div className="p-12 text-center text-[#7a6b6b]">
 
-            <FileSpreadsheet size={48} className="mx-auto mb-4 text-[#d8cdcd]" />
-
-            <p className="text-[15px] font-bold text-[#2a1b1b]">No datasets found</p>
-
-            <p className="text-[13px] mt-1">You haven't purchased any data exports yet.</p>
+              <FileSpreadsheet size={32} className="mx-auto mb-4 text-[#d8cdcd]" />
 
           </div>
 

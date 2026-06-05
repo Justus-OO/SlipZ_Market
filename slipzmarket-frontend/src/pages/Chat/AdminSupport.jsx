@@ -391,7 +391,7 @@ export const AdminSupport = () => {
         <div className="flex-1 overflow-y-auto p-6 bg-[#f9fafb]">
           {!activeSession ? (
             <div className="h-full flex flex-col items-center justify-center text-[#7a6b6b]">
-              <MessageCircle size={48} className="text-[#d8cdcd] mb-4" />
+              <MessageCircle size={28} className="text-[#d8cdcd] mb-4" />
               <p>Your workspace is ready.</p>
             </div>
           ) : messages.length === 0 ? (

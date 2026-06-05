@@ -37,7 +37,7 @@ const Wallet = () => {
             <ShieldCheck size={14} className="text-apollo-blue" />
             <span className="text-[10px] font-mono text-apollo-blue font-bold tracking-widest uppercase">Vault Secured</span>
           </div>
-          <h1 className="text-3xl lg:text-4xl font-black tracking-tighter text-slate-900">
+          <h1 className="text-2xl lg:text-2xl font-black tracking-tighter text-slate-900">
             Wallet & Funds
           </h1>
         </div>
@@ -73,8 +73,8 @@ const Wallet = () => {
               <div>
                 <p className="text-sm font-semibold text-slate-500 mb-1">Available Monero</p>
                 <div className="flex items-baseline gap-3 mb-2">
-                  <h2 className="text-5xl md:text-6xl font-black text-slate-900 tracking-tighter">2.450</h2>
-                  <span className="text-2xl font-bold text-apollo-blue">XMR</span>
+                  <h2 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tighter">2.450</h2>
+                  <span className="text-xl md:text-2xl font-bold text-apollo-blue">XMR</span>
                 </div>
                 <p className="text-sm font-mono font-bold text-slate-400 flex items-center gap-2">
                   ≈ $392.50 USD <span className="text-[10px] text-emerald-500 bg-emerald-50 px-1.5 rounded">+2.4% Today</span>
@@ -83,7 +83,7 @@ const Wallet = () => {
 
               {/* Quick Conversion/Top-up Button */}
               <button className="bg-white border border-slate-200 hover:border-apollo-blue text-slate-900 hover:text-apollo-blue px-6 py-4 rounded-2xl text-sm font-bold transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-2 group/btn">
-                <Plus size={18} /> Top Up Balance
+                <Plus size={16} /> Top Up Balance
               </button>
             </div>
           </div>

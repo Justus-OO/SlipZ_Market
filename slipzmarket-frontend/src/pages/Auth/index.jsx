@@ -407,26 +407,26 @@ const handleInitialSubmit = async (e) => {
 
         {/* Logo */}
         <div className="absolute top-10 left-12 z-20 flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => navigate('/')}>
-          <Asterisk size={32} strokeWidth={3} className="text-[#d6c9b8]" />
+          <Asterisk size={24} strokeWidth={3} className="text-[#d6c9b8]" />
           <span className="text-2xl font-bold text-white tracking-tight">SlipZMarket</span>
         </div>
 
         {/* Minimal Content */}
         <div className="relative z-20 my-auto px-12 xl:px-20 flex flex-col gap-12">
-          <h1 className="text-5xl xl:text-7xl font-black text-white leading-[1.05] tracking-tight">
+          <h1 className="text-4xl xl:text-6xl font-black text-white leading-[1.05] tracking-tight">
             Data that <br/><span className="text-[#8b6f5a]">closes deals.</span>
           </h1>
           
           <div className="flex gap-4 animate-fade-in-up">
             <div className="flex-1 bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-5 hover:bg-white/10 transition-colors">
-              <Database className="text-[#8b6f5a] mb-3" size={24} />
-              <div className="text-3xl font-black text-white mb-1">50M+</div>
+              <Database className="text-[#8b6f5a] mb-3" size={20} />
+              <div className="text-2xl font-black text-white mb-1">50M+</div>
               <div className="text-[#d6c9b8] text-sm font-medium">Verified B2B Contacts</div>
             </div>
             
             <div className="flex-1 bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-5 hover:bg-white/10 transition-colors">
-              <Target className="text-[#8b6f5a] mb-3" size={24} />
-              <div className="text-3xl font-black text-white mb-1">99%</div>
+              <Target className="text-[#8b6f5a] mb-3" size={20} />
+              <div className="text-2xl font-black text-white mb-1">99%</div>
               <div className="text-[#d6c9b8] text-sm font-medium">Data Accuracy Rate</div>
             </div>
           </div>
@@ -438,7 +438,7 @@ const handleInitialSubmit = async (e) => {
         
         {/* Mobile Header */}
         <div className="lg:hidden absolute top-6 left-6 flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
-          <Asterisk size={28} strokeWidth={3} className="text-[#8b6f5a]" />
+          <Asterisk size={20} strokeWidth={3} className="text-[#8b6f5a]" />
           <span className="text-xl font-bold text-[#3b2a23] tracking-tight">SlipZMarket</span>
         </div>
 
