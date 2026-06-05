@@ -4,12 +4,16 @@
 FROM node:20-slim AS frontend-build
 WORKDIR /app/frontend
 
-# Leverage Docker cache layers for dependencies
+# Set a default value so the build doesn't fail if the arg is missing
+ARG VITE_API_URL=https://slipz-market-2.onrender.com/api
+ENV VITE_API_URL=$VITE_API_URL
+
 COPY slipzmarket-frontend/package*.json ./
 RUN npm ci
 
 COPY slipzmarket-frontend/ ./
 RUN npm run build
+
 
 # ==========================================
 # Stage 2: Build Backend
