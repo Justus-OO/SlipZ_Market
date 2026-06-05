@@ -2,23 +2,31 @@
 
 /* Global theme variables and font */
 :root {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  /* Fonts */
+  --font-sans: 'Inter', system-ui, sans-serif;
 
-  /* Core theme tokens (light default) */
-  --bg: #f5efe6;
-  --surface: #ffffff;
-  --surface-soft: #faf6f0;
-  --surface-strong: #f3ede6;
-  --text-primary: #3b2a23;
-  --muted: #8b6f5a;
-  --border: #d6c9b8;
-  --border-strong: #c7b59f;
-  --accent: #8b6f5a;
-  --accent-hover: #6c5544;
+  /* Backgrounds: The "Haze" Base */
+  --bg: #f8fafc;             /* A very soft, barely-there blue-gray mist */
+  --surface: #ffffff;        /* Crisp white */
+  --surface-soft: #f1f5f9;   /* Subtle depth */
+  --surface-strong: #e2e8f0; 
+
+  /* Text: Soft Slate (Very relaxed, not black) */
+  --text-primary: #475569;   /* A relaxed, mid-tone slate */
+  --muted: #94a3b8;          /* A very soft, dreamy gray */
+
+  /* Borders: The "Glass" feel */
+  --border: #e2e8f0;         
+  --border-strong: #cbd5e1;  
+
+  /* Accents: "Seafoam" - Calming and Chilled */
+  --accent: #64748b;         /* Muted blue-slate (Monochrome-chilled) */
+  --accent-hover: #475569;
   --accent-foreground: #ffffff;
-  --accent-bg: #ffffff;
-  --accent-border: rgba(214,201,184,0.6);
-  color-scheme: light;
+  
+  /* UI Elements: Pale Ice */
+  --accent-bg: #f1f5f9;      
+  --accent-border: #cbd5e1;   
 }
 
 /* Dark theme override */
