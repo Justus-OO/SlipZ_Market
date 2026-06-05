@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { requireAuth } from './middleware/auth.middleware';
 import { CoreService } from '../services/core.services';
 import prisma from '../db';
+import NotificationService from '../services/notification.service.js';
 import { Parser } from 'json2csv';
 
 const router = Router();
@@ -145,6 +146,13 @@ router.delete('/:invoiceId', requireAuth, CoreService.catchAsync(async (req: any
     where: { invoiceId, workspaceId }
   });
 
+  await NotificationService.sendToUser(req.user.userId, {
+    title: 'Dataset Removed',
+    message: `The dataset associated with Invoice ${invoiceId} was removed from your workspace. Your invoice record is still available for reference.`,
+    type: 'INFO',
+    link: '/dashboard/history'
+  });
+
   return CoreService.success(res, 200, 'Dataset deleted successfully');
 }));
 
@@ -164,6 +172,13 @@ router.post('/:invoiceId/remove-leads', requireAuth, CoreService.catchAsync(asyn
       workspaceId,
       leadId: { in: leadIds }
     }
+  });
+
+  await NotificationService.sendToUser(req.user.userId, {
+    title: 'Dataset Updated',
+    message: `${leadIds.length} lead(s) were removed from dataset ${invoiceId}.`,
+    type: 'INFO',
+    link: `/datasets/${invoiceId}`
   });
 
   return CoreService.success(res, 200, 'Selected leads removed');

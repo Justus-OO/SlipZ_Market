@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { CoreService } from '../services/core.services';
 import { CheckoutService } from '../services/checkout.service';
 import { stripe } from '../services/stripe.service';
+import { PDFGenerator } from '../services/pdf.service';
 import prisma from '../db';
 import { requireAuth } from './middleware/auth.middleware';
 
@@ -63,7 +64,7 @@ router.post('/finalize', requireAuth, CoreService.catchAsync(async (req: any, re
 
 // 3. BALANCE CHECKOUT: Process payment directly from Workspace Balance
 router.post('/process-balance', requireAuth, CoreService.catchAsync(async (req: any, res: Response) => {
-  const { billingDetails } = req.body;
+  const billingDetails = req.body.billingDetails || {};
   const userId = req.user.userId;
   const workspaceId = req.user.workspaceId;
 
@@ -97,27 +98,51 @@ router.post('/process-balance', requireAuth, CoreService.catchAsync(async (req: 
 
   try {
     // E. Execute the core checkout logic
-    const invoice = await CheckoutService.completeOrder(
-      userId, 
-      workspaceId, 
-      balanceTxId, 
+    const invoiceResult = await CheckoutService.completeOrder(
+      userId,
+      workspaceId,
+      balanceTxId,
       amount,
-      billingDetails 
+      billingDetails
     );
-    
-    return CoreService.success(res, 201, 'Order finalized using balance', { invoice });
-    
-  } catch (error) {
+
+    return CoreService.success(res, 201, 'Order finalized using balance', { invoice: invoiceResult.invoice || invoiceResult });
+  } catch (error: any) {
+    const errorMessage = error?.message || 'Balance checkout failed.';
+    console.error('[BALANCE CHECKOUT ERROR]', errorMessage, error);
+
     // F. ROLLBACK: If cart clearing or invoice generation fails, refund the balance instantly
-    console.error(`[CHECKOUT ERROR] Rolling back balance deduction for ${workspaceId}`);
-    
     await prisma.workspace.update({
       where: { id: workspaceId },
       data: { balance: { increment: amount } }
     });
-    
-    throw error; // Let your global error handler catch this
+
+    const normalizedError = errorMessage.replace('ORDER_ABORTED: ', '').replace('INSUFFICIENT_DATA: ', '');
+    const isClientFailure = /ORDER_ABORTED|INSUFFICIENT_DATA|Cart is empty|Insufficient workspace funds/i.test(errorMessage);
+
+    return CoreService.error(res,
+      isClientFailure ? 400 : 500,
+      normalizedError
+    );
   }
 }));
 
+
+router.get('/admin/invoices/download/:id', requireAuth, CoreService.catchAsync(async (req: any, res: Response) => {
+  const invoiceId = req.params.id;
+  
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: invoiceId },
+    include: {
+      items: {
+        include: { package: true }
+      }
+    }
+  });
+
+  if (!invoice) return CoreService.error(res, 404, 'Invoice not found');
+
+  // Stream compiled response payload directly
+  PDFGenerator.streamInvoiceToResponse(invoice, res);
+}));
 export default router;

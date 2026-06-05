@@ -34,7 +34,16 @@ export const AdminSupport = () => {
     const token = localStorage.getItem('slipz_token');
     if (!token) return;
 
-    socketRef.current = io(SOCKET_URL, { auth: { token }, withCredentials: true });
+    const socketEndpoint = SOCKET_URL || API_URL.replace(/\/api\/?$/, '') || window.location.origin;
+    socketRef.current = io(socketEndpoint, {
+      auth: { token },
+      withCredentials: true,
+      transports: ['websocket', 'polling'],
+    });
+
+    socketRef.current.on('connect', () => {
+      console.log('AdminSupport socket connected:', socketRef.current.id, 'endpoint:', socketEndpoint);
+    });
 
     const fetchSessions = async () => {
       try {

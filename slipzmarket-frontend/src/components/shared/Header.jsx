@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { API_URL } from '../../utils/api';
+import { API_URL, SOCKET_URL } from '../../utils/api';
 import { useTranslation } from 'react-i18next';
 import i18n from '../../i18n';
+import { io } from 'socket.io-client'; // Import your socket library
 import {
   Asterisk,
   Bell,
@@ -28,11 +29,6 @@ import { Elements, CardElement, useStripe, useElements } from '@stripe/react-str
 // Initialize Stripe outside of the component to avoid recreating the object on every render
 // Make sure you have VITE_STRIPE_PUBLISHABLE_KEY in your .env file
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || 'pk_test_placeholder');
-
-const MOCK_NOTIFICATIONS = [
-  { id: 1, title: 'Export Complete', text: "Your list 'Q3 Founders' is ready for download.", time: '2m ago', unread: true },
-  { id: 2, title: 'Low Balance', text: 'Your workspace balance is below £50.00.', time: '1h ago', unread: true },
-];
 
 const LANGUAGE_OPTIONS = [
   { code: 'en', label: 'English (UK)' },
@@ -189,6 +185,8 @@ const Header = () => {
     organization: 'Loading...',
     avatarColor: '#8b6f5a',
   });
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [isFundsModalOpen, setIsFundsModalOpen] = useState(false);
 
@@ -247,6 +245,52 @@ const Header = () => {
 
     fetchHeaderData();
   }, [handleSignOut, location.pathname, navigate]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('slipz_token');
+    if (!token) return;
+
+    const fetchNotifications = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/notifications`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setNotifications(res.data.data || []);
+        setUnreadCount((res.data.data || []).filter((n) => !n.isRead).length);
+      } catch (error) {
+        console.error('Failed to load notifications:', error);
+      }
+    };
+
+    fetchNotifications();
+
+    const socketEndpoint =
+      SOCKET_URL ||
+      API_URL.replace(/\/api\/?$/, '') ||
+      window.location.origin;
+    const socket = io(socketEndpoint, {
+      auth: { token },
+      withCredentials: true,
+      transports: ['websocket', 'polling'],
+    });
+
+    socket.on('connect', () => {
+      console.log('Socket connected:', socket.id, 'endpoint:', socketEndpoint);
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+    });
+
+    socket.on('new_notification', (newNotif) => {
+      setNotifications((prev) => [newNotif, ...prev]);
+      setUnreadCount((prev) => prev + 1);
+    });
+
+    return () => {
+      if (socket) socket.disconnect();
+    };
+  }, []);
 
   const toggleDropdown = (name) => {
     setActiveDropdown((current) => (current === name ? null : name));
@@ -310,42 +354,50 @@ const Header = () => {
             </div>
 
             <div className="relative z-50 hidden lg:flex">
-              <button
-                type="button"
-                onClick={() => toggleDropdown('notifications')}
-                className={`relative transition-colors ${activeDropdown === 'notifications' ? 'text-muted' : 'text-primary hover:text-muted'}`}
-              >
-                <Bell size={20} />
-                <span className="absolute right-0 top-0 h-2.5 w-2.5 rounded-full border-2 border-surface bg-accent" />
-              </button>
+<button
+  type="button"
+  onClick={() => toggleDropdown('notifications')}
+  className={`relative transition-colors ${activeDropdown === 'notifications' ? 'text-muted' : 'text-primary hover:text-muted'}`}
+>
+  <Bell size={20} />
+  {unreadCount > 0 && (
+    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-white border-2 border-surface">
+      {unreadCount}
+    </span>
+  )}
+</button>
 
-              {activeDropdown === 'notifications' && (
-                <div className="absolute -right-5 top-full mt-4 flex w-80 flex-col overflow-hidden rounded-xl border border-theme bg-surface shadow-lg animate-fade-in-up">
-                  <div className="flex items-center justify-between border-b border-theme bg-app px-4 py-3">
-                    <span className="text-[14px] font-bold text-primary">{t('notifications')}</span>
-                    <button type="button" className="text-[11px] font-bold text-muted hover:underline">
-                      {t('markAllRead')}
-                    </button>
-                  </div>
-                  <div className="max-h-75 overflow-y-auto">
-                    {MOCK_NOTIFICATIONS.map((notification) => (
-                      <div
-                        key={notification.id}
-                        className={`cursor-pointer border-b border-theme p-4 transition-colors hover:bg-app ${notification.unread ? 'bg-surface' : 'opacity-70'}`}
-                      >
-                        <div className="mb-1 flex items-start justify-between">
-                          <h4 className="flex items-center gap-1.5 text-[13px] font-bold text-primary">
-                            {notification.unread && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
-                            {notification.title}
-                          </h4>
-                          <span className="text-[11px] font-medium text-muted">{notification.time}</span>
-                        </div>
-                        <p className="pl-3 text-[12px] leading-relaxed text-primary opacity-80">{notification.text}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+{activeDropdown === 'notifications' && (
+  <div className="absolute -right-5 top-full mt-4 flex w-80 flex-col overflow-hidden rounded-xl border border-theme bg-surface shadow-lg animate-fade-in-up">
+    <div className="flex items-center justify-between border-b border-theme bg-app px-4 py-3">
+      <span className="text-[14px] font-bold text-primary">{t('notifications')}</span>
+      <button 
+        type="button" 
+        onClick={async () => {
+          await axios.put(`${API_URL}/notifications/read-all`, {}, { 
+            headers: { Authorization: `Bearer ${localStorage.getItem('slipz_token')}` } 
+          });
+          setNotifications(notifications.map(n => ({ ...n, isRead: true })));
+          setUnreadCount(0);
+        }}
+        className="text-[11px] font-bold text-muted hover:underline"
+      >
+        {t('markAllRead')}
+      </button>
+    </div>
+    <div className="max-h-75 overflow-y-auto">
+      {notifications.length > 0 ? notifications.map((n) => (
+        <div key={n.id} className={`p-4 border-b border-theme cursor-pointer ${!n.isRead ? 'bg-surface' : 'opacity-70'}`}>
+          <div className="flex justify-between mb-1">
+            <h4 className="text-[13px] font-bold text-primary">{n.title}</h4>
+            <span className="text-[10px] text-muted">{new Date(n.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+          </div>
+          <p className="text-[12px] text-primary opacity-80">{n.message}</p>
+        </div>
+      )) : <p className="p-4 text-center text-[12px] text-muted">No new notifications</p>}
+    </div>
+  </div>
+)}
             </div>
 
             <div className="hidden h-8 w-px bg-theme lg:block" />
@@ -456,7 +508,7 @@ const Header = () => {
 
       {/* STRIPE MODAL WRAPPED IN ELEMENTS */}
       {isFundsModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
           <div className="absolute inset-0 animate-fade-in bg-[#3b2a23]/60 backdrop-blur-sm" onClick={() => setIsFundsModalOpen(false)} />
 
           <div className="relative flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-theme bg-surface shadow-2xl animate-fade-in-up">

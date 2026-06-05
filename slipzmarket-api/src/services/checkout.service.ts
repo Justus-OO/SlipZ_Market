@@ -1,6 +1,11 @@
 import prisma from '../db.js';
 import { MailerService } from './mailer.service.js';
-import { NotificationService } from './notification.service.js'; // 👈 Added Notification Import
+import * as NotificationModule from './notification.service.js';
+
+const NotificationService = (NotificationModule as any).NotificationService
+  || (NotificationModule as any).default?.NotificationService
+  || (NotificationModule as any).default
+  || (NotificationModule as any);
 
 export const CheckoutService = {
   async completeOrder(
@@ -13,8 +18,9 @@ export const CheckoutService = {
     
     // Fetch user upfront so we have their email in case the transaction fails
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, firstName: true } });
-    const targetEmail = billingDetails?.email || user?.email;
-    const targetName = billingDetails?.firstName || user?.firstName || 'User';
+    const targetEmail = billingDetails?.email?.trim() || user?.email;
+    const targetName = billingDetails?.firstName?.trim() || user?.firstName || 'User';
+    const shouldUpsertBilling = billingDetails && typeof billingDetails === 'object' && billingDetails.email?.trim();
 
     // 1. FAST IDEMPOTENCY CHECK
     const existingInvoice = await prisma.invoice.findUnique({ 
@@ -45,8 +51,8 @@ export const CheckoutService = {
           throw new Error(`ORDER_ABORTED: Price mismatch. Cart Total: £${calculatedTotal}, Paid: £${stripeAmountPaid}`);
         }
 
-        // 4. Upsert Billing Profile
-        if (billingDetails) {
+        // 4. Upsert Billing Profile only when the billing email is present
+        if (shouldUpsertBilling) {
           await tx.billingProfile.upsert({
             where: { userId },
             update: billingDetails,
@@ -149,12 +155,15 @@ export const CheckoutService = {
       if (!result.isDuplicate && result.invoice) {
         
         // 1. Fire Real-Time In-App Notification 👈 NEW
-        NotificationService.sendToUser(userId, {
+        const successNotificationPromise = NotificationService?.sendToUser?.(userId, {
           title: 'Purchase Successful! 🎉',
           message: `Successfully unlocked ${result.receiptData.totalLeadsUnlocked} premium business leads. Invoice ${result.invoice.id} generated.`,
           type: 'SUCCESS',
           link: '/dashboard/history' // Adjust path to where users view invoices/leads
         });
+        if (successNotificationPromise?.catch) {
+          successNotificationPromise.catch((err: any) => console.error('[NOTIFICATION SEND ERROR]', err));
+        }
 
         // 2. Trigger Success Email
         if (targetEmail) {
@@ -185,12 +194,15 @@ export const CheckoutService = {
         const cleanErrorMessage = error.message.replace('ORDER_ABORTED: ', '').replace('INSUFFICIENT_DATA: ', '');
 
         // 1. Fire Real-Time In-App Error Notification 👈 NEW
-        NotificationService.sendToUser(userId, {
+        const failureNotificationPromise = NotificationService?.sendToUser?.(userId, {
           title: 'Checkout Failed ❌',
           message: cleanErrorMessage,
           type: 'ERROR',
           link: '/dashboard/cart'
         });
+        if (failureNotificationPromise?.catch) {
+          failureNotificationPromise.catch((err: any) => console.error('[NOTIFICATION SEND ERROR]', err));
+        }
 
         // 2. Trigger Failure Email
         if (targetEmail) {
