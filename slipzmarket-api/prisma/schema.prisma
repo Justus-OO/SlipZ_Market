@@ -62,12 +62,12 @@ model User {
 
   // --- DASHBOARD & BILLING ADDITIONS ---
   exportCreditsUsed  Int    @default(0)
-  exportCreditsTotal Int    @default(5000)
-  planTier           String @default("Free Trial")
+  exportCreditsTotal Int    @default(0)
+  planTier           String @default("_._")
 
   avatarUrl        String?
   timezone         String  @default("GMT (London)")
-  currency         String  @default("GBP (£)")
+  currency         String  @default("USD ($)")
   twoFactorEnabled Boolean @default(false)
 
   // --- NOTIFICATION TOGGLES ---
@@ -225,8 +225,8 @@ model GlobalSettings {
 
   // Payments
   gateway       String  @default("Stripe")
-  currency      String  @default("GBP (£)")
-  processingFee Decimal @default(4.50) @db.Decimal(10, 2)
+  currency      String  @default("USD ($)")
+  processingFee Decimal @default(0.10) @db.Decimal(10, 2)
   publicKey     String  @default("")
   secretKey     String  @default("")
 
@@ -305,6 +305,15 @@ model FAQ {
   answer    String
   category  String   @default("General")
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+model AiKnowledge {
+  id        String   @id @default(uuid())
+  category  String   // e.g., "PRICING", "POLICY", "TECH_SUPPORT"
+  question  String
+  answer    String   @db.Text
   updatedAt DateTime @updatedAt
 }
 

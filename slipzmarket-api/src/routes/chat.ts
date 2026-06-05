@@ -23,6 +23,7 @@ router.post('/message', requireAuth, async (req: any, res: Response) => {
     
     return res.json({
       success: true,
+      sessionId: result.session.id,
       currentStatus: result.session.status,
       botResponse: result.botResponse, 
       escalatedToHuman: result.escalated
@@ -45,6 +46,15 @@ router.post('/admin/reply', requireAuth, requireAdmin, async (req: any, res: Res
   }
 
   try {
+    const session = await prisma.chatSession.findUnique({
+      where: { id: sessionId },
+      include: { user: true }
+    });
+
+    if (!session) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+
     // 1. Persist the message
     const message = await prisma.chatMessage.create({
       data: {
@@ -61,13 +71,20 @@ router.post('/admin/reply', requireAuth, requireAdmin, async (req: any, res: Res
       data: { status: 'AGENT_HANDLING', updatedAt: new Date() }
     });
 
-    // 3. Emit via WebSocket
-    SocketService.notifyUser(sessionId, 'agent_reply', {
+    const payload = {
       id: message.id,
       senderRole: 'AGENT',
       text: message.text,
       createdAt: message.createdAt
-    });
+    };
+
+    // 3. Emit via WebSocket to the open session room
+    SocketService.notifyUser(sessionId, 'agent_reply', payload);
+
+    // 4. Emit to the user's global socket room too, in case they aren't joined to session room yet
+    if (session.userId) {
+      SocketService.emitToUser(session.userId, 'agent_reply', payload);
+    }
 
     return res.json({ success: true, message });
   } catch (error: any) {
@@ -110,6 +127,44 @@ router.get('/admin/sessions/:sessionId', requireAuth, requireAdmin, async (req: 
   }
 });
 
+router.patch('/admin/sessions/:sessionId/status', requireAuth, requireAdmin, async (req: any, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const { status } = req.body;
+    const allowedStatuses = ['CLOSED', 'AGENT_HANDLING', 'AWAITING_AGENT'];
+
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ success: false, error: 'Invalid session status' });
+    }
+
+    const session = await prisma.chatSession.update({
+      where: { id: sessionId },
+      data: { status }
+    });
+
+    return res.json({ success: true, session });
+  } catch (error: any) {
+    console.error('Failed to update session status:', error);
+    return res.status(500).json({ success: false, error: 'Failed to update session status' });
+  }
+});
+
+router.patch('/admin/sessions/:sessionId/internal-notes', requireAuth, requireAdmin, async (req: any, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const { internalNotes } = req.body;
+
+    const session = await prisma.chatSession.update({
+      where: { id: sessionId },
+      data: { internalNotes }
+    });
+
+    return res.json({ success: true, session });
+  } catch (error: any) {
+    console.error('Failed to save internal notes:', error);
+    return res.status(500).json({ success: false, error: 'Failed to save internal notes' });
+  }
+});
 
 router.get('/history', requireAuth, async (req: any, res: Response) => {
   const userId = req.user.userId;
@@ -120,6 +175,39 @@ router.get('/history', requireAuth, async (req: any, res: Response) => {
     include: { messages: { orderBy: { createdAt: 'asc' } } }
   });
 
-  res.json({ messages: session ? session.messages : [] });
+  res.json({
+    messages: session ? session.messages : [],
+    sessionId: session?.id || null,
+    status: session?.status || null
+  });
 });
+
+
+// PATCH: Star/Unstar a message
+router.patch('/admin/messages/:id/star', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { isStarred } = req.body;
+    await prisma.chatMessage.update({
+      where: { id: req.params.id },
+      data: { isStarred }
+    });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: "Failed to update star status" });
+  }
+});
+
+// DELETE: Remove a message
+router.delete('/admin/messages/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await prisma.chatMessage.delete({
+      where: { id: req.params.id }
+    });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: "Failed to delete message" });
+  }
+});
+
+
 export default router;

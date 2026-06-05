@@ -4,9 +4,8 @@ import { io } from 'socket.io-client';
 import { API_URL, SOCKET_URL } from '../../utils/api';
 import { 
   Search, Send, MessageCircle, User, Loader2, 
-  ChevronRight, Shield, Mail, Phone, Clock, 
-  Paperclip, MoreVertical, CheckCircle, Bot, Headset,
-  Star, Trash2, Copy // Newly added icons
+  ChevronRight, Shield, Phone, 
+  Paperclip, MoreVertical, Bot, Headset, Star, Trash2, Copy, CheckCircle
 } from 'lucide-react';
 
 export const AdminSupport = () => {
@@ -14,11 +13,13 @@ export const AdminSupport = () => {
   const [activeSession, setActiveSession] = useState(null);
   const [messages, setMessages] = useState([]);
   const [reply, setReply] = useState('');
+  const [internalNotes, setInternalNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
   const socketRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const activeSessionIdRef = useRef(null);
 
   // Auto-scroll to bottom of messages
   const scrollToBottom = () => {
@@ -43,6 +44,7 @@ export const AdminSupport = () => {
 
     socketRef.current.on('connect', () => {
       console.log('AdminSupport socket connected:', socketRef.current.id, 'endpoint:', socketEndpoint);
+      socketRef.current.emit('join_admin_room');
     });
 
     const fetchSessions = async () => {
@@ -62,18 +64,28 @@ export const AdminSupport = () => {
 
     fetchSessions();
 
-    socketRef.current.emit('join_admin_room');
-    
     socketRef.current.on('new_escalation', (data) => {
       setSessions(prev => [data, ...prev.filter(s => s.id !== data.id)]);
     });
 
     // REAL-TIME LISTENER FOR INCOMING USER MESSAGES
-    socketRef.current.on('new_message', (msg) => {
-      if (activeSession?.id === msg.sessionId) {
+    socketRef.current.on('new_message', (payload) => {
+      const incoming = payload?.message || payload;
+      if (!incoming || !payload?.sessionId) return;
+
+      setSessions(prev => prev.map(s => {
+        if (s.id !== payload.sessionId) return s;
+        return {
+          ...s,
+          updatedAt: new Date().toISOString(),
+          unreadCount: (s.unreadCount || 0) + 1,
+        };
+      }));
+
+      if (activeSessionIdRef.current === payload.sessionId) {
         setMessages(prev => {
-          if (prev.find(m => m.id === msg.id)) return prev;
-          return [...prev, msg];
+          if (prev.find(m => m.id === incoming.id)) return prev;
+          return [...prev, incoming];
         });
       }
     });
@@ -81,12 +93,19 @@ export const AdminSupport = () => {
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
     }
-  }, [activeSession?.id]);
+  }, []);
+
+  const isSessionActive = (session) => {
+    if (!session) return false;
+    return session.status !== 'CLOSED';
+  };
 
   // Load Session Data
   const openSession = async (session) => {
+    activeSessionIdRef.current = session.id;
     setActiveSession(session);
     setMessages([]); 
+    setInternalNotes(session.internalNotes || '');
     const token = localStorage.getItem('slipz_token');
     
     try {
@@ -125,7 +144,53 @@ export const AdminSupport = () => {
     }
   };
 
-  // Handle Starring a message
+  const handleResolveSession = async () => {
+    if (!activeSession) return;
+    const token = localStorage.getItem('slipz_token');
+
+    try {
+      const res = await axios.patch(`${API_URL}/chat/admin/sessions/${activeSession.id}/status`,
+        { status: 'CLOSED' },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setActiveSession(res.data.session);
+      setSessions(prev => prev.map(s => s.id === activeSession.id ? res.data.session : s));
+    } catch (err) {
+      console.error('Failed to resolve session:', err);
+    }
+  };
+
+  const handleEscalateSession = async () => {
+    if (!activeSession) return;
+    const token = localStorage.getItem('slipz_token');
+
+    try {
+      const res = await axios.patch(`${API_URL}/chat/admin/sessions/${activeSession.id}/status`,
+        { status: 'AWAITING_AGENT' },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setActiveSession(res.data.session);
+      setSessions(prev => prev.map(s => s.id === activeSession.id ? res.data.session : s));
+    } catch (err) {
+      console.error('Failed to escalate session:', err);
+    }
+  };
+
+  const handleSaveNotes = async () => {
+    if (!activeSession) return;
+    const token = localStorage.getItem('slipz_token');
+
+    try {
+      const res = await axios.patch(`${API_URL}/chat/admin/sessions/${activeSession.id}/internal-notes`,
+        { internalNotes },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setActiveSession(res.data.session);
+    } catch (err) {
+      console.error('Failed to save internal notes:', err);
+    }
+  };
+
   const handleStarMessage = async (messageId, currentStatus) => {
     setMessages(prev => prev.map(m => 
       m.id === messageId ? { ...m, isStarred: !currentStatus } : m
@@ -145,19 +210,18 @@ export const AdminSupport = () => {
     }
   };
 
-  // Handle Deleting a message
   const handleDeleteMessage = async (messageId) => {
-    if (!window.confirm("Are you sure you want to delete this message?")) return;
+    if (!window.confirm('Delete this message permanently?')) return;
 
     setMessages(prev => prev.filter(m => m.id !== messageId));
 
     try {
       const token = localStorage.getItem('slipz_token');
-      await axios.delete(`${API_URL}/chat/admin/messages/${messageId}`, { 
-        headers: { Authorization: `Bearer ${token}` } 
+      await axios.delete(`${API_URL}/chat/admin/messages/${messageId}`, {
+        headers: { Authorization: `Bearer ${token}` }
       });
     } catch (err) {
-      console.error("Failed to delete message:", err);
+      console.error('Failed to delete message:', err);
     }
   };
 
@@ -218,11 +282,18 @@ export const AdminSupport = () => {
                   <div className="text-[12px] text-[#7a6b6b] truncate mt-0.5">{s.user?.email}</div>
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                    s.status === 'AGENT_HANDLING' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'
-                  }`}>
-                    {s.status.replace('_', ' ')}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {s.unreadCount > 0 && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#800000] text-white uppercase">
+                        {s.unreadCount}
+                      </span>
+                    )}
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                      s.status === 'AGENT_HANDLING' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {s.status.replace('_', ' ')}
+                    </span>
+                  </div>
                   <ChevronRight size={14} className="text-[#d8cdcd]" />
                 </div>
               </div>
@@ -232,7 +303,7 @@ export const AdminSupport = () => {
       </div>
 
       {/* 2. CHAT AREA */}
-      <div className="flex-1 flex flex-col border-r border-[#d8cdcd] bg-white min-w-[400px]">
+      <div className="flex-1 flex flex-col border-r border-[#d8cdcd] bg-white min-w-100">
         <div className="h-16 border-b border-[#d8cdcd] flex items-center justify-between px-6 shrink-0 bg-white z-10">
           {activeSession ? (
             <div className="flex items-center gap-3">
@@ -241,7 +312,10 @@ export const AdminSupport = () => {
               </div>
               <div>
                 <h3 className="font-bold text-[15px]">{activeSession.user?.firstName}</h3>
-                <p className="text-[12px] text-green-600 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> Active Now</p>
+                <p className={`text-[12px] flex items-center gap-1 ${isSessionActive(activeSession) ? 'text-green-600' : 'text-[#7a6b6b]'}`}>
+                <span className={`w-2 h-2 rounded-full ${isSessionActive(activeSession) ? 'bg-green-500' : 'bg-gray-400'}`} />
+                {isSessionActive(activeSession) ? 'Active Now' : 'Inactive'}
+              </p>
               </div>
             </div>
           ) : (
@@ -284,34 +358,28 @@ export const AdminSupport = () => {
                     )}
 
                     <div className={`flex flex-col max-w-[70%] ${isAgent ? 'items-end' : 'items-start'}`}>
-                      
-                      {/* 👉 MESSAGE ACTIONS (Hidden until hover) */}
-                      <div className={`flex items-center gap-1 mb-1 transition-opacity duration-200 opacity-0 group-hover:opacity-100 ${isAgent ? 'flex-row-reverse' : 'flex-row'}`}>
-                        <button 
+                      <div className={`flex items-center gap-2 mb-2 transition-opacity duration-200 opacity-0 group-hover:opacity-100 ${isAgent ? 'justify-end' : 'justify-start'}`}>
+                        <button
                           onClick={() => handleStarMessage(m.id, m.isStarred)}
                           className="p-1 text-[#7a6b6b] hover:text-[#800000] hover:bg-[#f5f2f2] rounded transition-colors"
                           title="Star message"
                         >
-                          <Star size={14} className={m.isStarred ? "fill-[#800000] text-[#800000]" : ""} />
+                          <Star size={14} className={m.isStarred ? 'fill-[#800000] text-[#800000]' : ''} />
                         </button>
-                        
-                        <button 
+                        <button
                           onClick={() => navigator.clipboard.writeText(m.text)}
                           className="p-1 text-[#7a6b6b] hover:text-[#800000] hover:bg-[#f5f2f2] rounded transition-colors"
-                          title="Copy text"
+                          title="Copy message"
                         >
                           <Copy size={14} />
                         </button>
-
-                        {isAgent && (
-                          <button 
-                            onClick={() => handleDeleteMessage(m.id)}
-                            className="p-1 text-[#7a6b6b] hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                            title="Delete message"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
+                        <button
+                          onClick={() => handleDeleteMessage(m.id)}
+                          className="p-1 text-[#7a6b6b] hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                          title="Delete message"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
 
                       <div className={`px-4 py-2.5 text-[14px] shadow-sm leading-relaxed whitespace-pre-wrap ${
@@ -324,10 +392,8 @@ export const AdminSupport = () => {
                         {m.text}
                       </div>
                       
-                      {/* 👉 ADDED STAR ICON NEXT TO TIMESTAMP */}
-                      <span className={`text-[10px] text-[#7a6b6b] mt-1 mx-1 flex items-center gap-1`}>
+                      <span className="text-[10px] text-[#7a6b6b] mt-1 mx-1">
                         {formatTime(m.createdAt)}
-                        {m.isStarred && <Star size={10} className="fill-[#800000] text-[#800000]" />}
                       </span>
                     </div>
 
@@ -379,49 +445,82 @@ export const AdminSupport = () => {
       </div>
 
       {/* 3. CONTEXT PANEL */}
-      <div className="w-72 bg-white p-6 shrink-0 overflow-y-auto hidden lg:block">
+      <div className="w-80 bg-white p-6 shrink-0 overflow-y-auto hidden lg:block">
         <h3 className="font-bold text-[15px] flex items-center gap-2 mb-6 text-[#2a1b1b]">
-          <User size={18} className="text-[#800000]" /> User Context
+          <User size={18} className="text-[#800000]" /> Support Panel
         </h3>
         
         {activeSession ? (
           <div className="space-y-6">
-            <div className="bg-[#f9fafb] border border-[#d8cdcd] rounded-xl p-4 space-y-3">
-              <div>
-                <p className="text-[11px] text-[#7a6b6b] uppercase font-bold tracking-wider">Name</p>
-                <p className="text-[14px] font-semibold text-[#2a1b1b] truncate">{activeSession.user?.firstName}</p>
+            <div className="bg-[#f9fafb] border border-[#d8cdcd] rounded-2xl p-4 space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] text-[#7a6b6b] uppercase font-bold tracking-wider">Customer</p>
+                  <p className="text-[14px] font-semibold text-[#2a1b1b] truncate">{activeSession.user?.firstName || 'Unknown'}</p>
+                </div>
+                <span className={`text-[11px] px-2 py-1 rounded-full font-semibold ${isSessionActive(activeSession) ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'}`}>
+                  {isSessionActive(activeSession) ? 'Active Now' : 'Inactive'}
+                </span>
               </div>
-              <div>
-                <p className="text-[11px] text-[#7a6b6b] uppercase font-bold tracking-wider">Email</p>
-                <p className="text-[13px] text-[#2a1b1b] truncate" title={activeSession.user?.email}>{activeSession.user?.email}</p>
-              </div>
-              <div>
-                <p className="text-[11px] text-[#7a6b6b] uppercase font-bold tracking-wider">Started</p>
-                <p className="text-[13px] text-[#2a1b1b] flex items-center gap-1"><Clock size={12}/> {formatTime(activeSession.createdAt || new Date())}</p>
+
+              <div className="grid gap-3">
+                <div className="p-3 bg-white rounded-2xl border border-[#d8cdcd]">
+                  <p className="text-[10px] uppercase tracking-wider text-[#7a6b6b]">Email</p>
+                  <p className="text-[13px] text-[#2a1b1b] truncate" title={activeSession.user?.email}>{activeSession.user?.email}</p>
+                </div>
+                <div className="p-3 bg-white rounded-2xl border border-[#d8cdcd]">
+                  <p className="text-[10px] uppercase tracking-wider text-[#7a6b6b]">Session status</p>
+                  <p className="text-[13px] font-semibold text-[#2a1b1b]">{activeSession.status.replace('_', ' ')}</p>
+                </div>
+                <div className="p-3 bg-white rounded-2xl border border-[#d8cdcd]">
+                  <p className="text-[10px] uppercase tracking-wider text-[#7a6b6b]">Last activity</p>
+                  <p className="text-[13px] text-[#2a1b1b]">{formatTime(activeSession.updatedAt || activeSession.createdAt)}</p>
+                </div>
               </div>
             </div>
 
-            <div>
-              <p className="text-[11px] text-[#7a6b6b] uppercase font-bold tracking-wider mb-2">Actions</p>
-              <button className="w-full flex items-center justify-center gap-2 bg-white border border-[#d8cdcd] text-[#2a1b1b] hover:bg-[#f5f2f2] py-2 rounded-lg text-[13px] font-bold transition-colors mb-2">
-                <CheckCircle size={16} className="text-green-600" /> Mark as Resolved
-              </button>
-              <button className="w-full flex items-center justify-center gap-2 bg-white border border-[#d8cdcd] text-[#800000] hover:bg-red-50 py-2 rounded-lg text-[13px] font-bold transition-colors">
-                <Shield size={16} /> Escalate Ticket
-              </button>
+            <div className="bg-[#f9fafb] border border-[#d8cdcd] rounded-2xl p-4 space-y-3">
+              <p className="text-[11px] text-[#7a6b6b] uppercase font-bold tracking-wider">Room checkers</p>
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between px-3 py-3 rounded-2xl bg-white border border-[#d8cdcd]">
+                  <span className="text-[13px] text-[#2a1b1b]">Message count</span>
+                  <span className="font-bold text-[#800000]">{messages.length}</span>
+                </div>
+                <div className="flex items-center justify-between px-3 py-3 rounded-2xl bg-white border border-[#d8cdcd]">
+                  <span className="text-[13px] text-[#2a1b1b]">Unread alerts</span>
+                  <span className="font-bold text-[#800000]">{activeSession.unreadCount || 0}</span>
+                </div>
+                <div className="flex items-center justify-between px-3 py-3 rounded-2xl bg-white border border-[#d8cdcd]">
+                  <span className="text-[13px] text-[#2a1b1b]">Room active</span>
+                  <span className={`font-bold ${isSessionActive(activeSession) ? 'text-emerald-700' : 'text-gray-600'}`}>{isSessionActive(activeSession) ? 'Yes' : 'No'}</span>
+                </div>
+              </div>
             </div>
-            
-            <div>
-               <p className="text-[11px] text-[#7a6b6b] uppercase font-bold tracking-wider mb-2">Internal Notes (Private)</p>
-               <textarea 
-                  className="w-full border border-[#d8cdcd] rounded-lg p-3 text-[13px] bg-[#f9fafb] focus:bg-white focus:outline-none focus:border-[#800000]"
-                  rows={4}
+
+            <div className="space-y-5">
+              <div>
+                <p className="text-[11px] text-[#7a6b6b] uppercase font-bold tracking-wider mb-2">Actions</p>
+                <button onClick={handleResolveSession} className="w-full flex items-center justify-center gap-2 bg-white border border-[#d8cdcd] text-[#2a1b1b] hover:bg-[#f5f2f2] py-3 rounded-2xl text-[13px] font-bold transition-colors mb-2">
+                  <CheckCircle size={16} className="text-green-600" /> Mark as Resolved
+                </button>
+                <button onClick={handleEscalateSession} className="w-full flex items-center justify-center gap-2 bg-white border border-[#d8cdcd] text-[#800000] hover:bg-red-50 py-3 rounded-2xl text-[13px] font-bold transition-colors">
+                  <Shield size={16} /> Escalate Ticket
+                </button>
+              </div>
+
+              <div>
+                <p className="text-[11px] text-[#7a6b6b] uppercase font-bold tracking-wider mb-2">Internal Notes</p>
+                <textarea
+                  value={internalNotes}
+                  onChange={(e) => setInternalNotes(e.target.value)}
+                  className="w-full border border-[#d8cdcd] rounded-2xl p-3 text-[13px] bg-[#f9fafb] focus:bg-white focus:outline-none focus:border-[#800000]"
+                  rows={5}
                   placeholder="Leave a note for other agents..."
-                  defaultValue={activeSession.internalNotes || ''}
-               />
-               <button className="mt-2 w-full bg-[#f5f2f2] text-[#7a6b6b] hover:bg-[#e8e2e2] py-1.5 rounded-lg text-[12px] font-bold transition-colors">
-                 Save Note
-               </button>
+                />
+                <button onClick={handleSaveNotes} className="mt-2 w-full bg-[#800000] text-white hover:bg-[#660000] py-3 rounded-2xl text-[13px] font-bold transition-colors">
+                  Save Note
+                </button>
+              </div>
             </div>
           </div>
         ) : (

@@ -1,12 +1,15 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { MessageCircle, X, Send } from 'lucide-react';
 import axios from 'axios';
-import { API_URL } from '../../utils/api';
+import { API_URL, SOCKET_URL } from '../../utils/api';
+import { io } from 'socket.io-client';
 
 const ChatWidget = () => {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [sessionId, setSessionId] = useState('');
+  const socketRef = useRef(null);
   
   // 1. The Message State Array
   const [messages, setMessages] = useState([
@@ -35,29 +38,73 @@ const ChatWidget = () => {
     }
   }, [isChatOpen]);
 
+  useEffect(() => {
+    const token = localStorage.getItem('slipz_token');
+    if (!isChatOpen || !token) return;
+
+    const socketEndpoint = SOCKET_URL || API_URL.replace(/\/api\/?$/, '') || window.location.origin;
+    const socket = io(socketEndpoint, {
+      auth: { token },
+      withCredentials: true,
+      transports: ['websocket', 'polling'],
+    });
+
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      console.log('ChatWidget socket connected:', socket.id, 'endpoint:', socketEndpoint);
+    });
+
+    socket.on('agent_reply', (msg) => {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        return [...prev, {
+          id: msg.id,
+          senderRole: msg.senderRole || 'AGENT',
+          text: msg.text || ''
+        }];
+      });
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error('ChatWidget socket error:', err);
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [isChatOpen]);
+
+  useEffect(() => {
+    if (!sessionId || !socketRef.current || !socketRef.current.connected) return;
+    socketRef.current.emit('join_user_session', sessionId);
+  }, [sessionId]);
+
   const fetchChatHistory = async () => {
     const token = localStorage.getItem('slipz_token');
     try {
       const response = await axios.get(`${API_URL}/chat/history`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
-      // Merge history with your welcome message
-      if (response.data.messages && response.data.messages.length > 0) {
-        const formattedHistory = response.data.messages.map(m => ({
-          id: m.id,
-          senderRole: m.senderRole, // Ensure this matches 'USER', 'BOT', or 'AGENT'
-          text: m.text
-        }));
-        
-        setMessages([
-          { 
-            id: 'welcome-msg', 
-            senderRole: 'BOT', 
-            text: 'Hi there! Welcome back to SlipZMarket support.' 
-          },
-          ...formattedHistory
-        ]);
+      const historyMessages = Array.isArray(response.data.messages) ? response.data.messages : [];
+      const formattedHistory = historyMessages.map(m => ({
+        id: m.id,
+        senderRole: m.senderRole,
+        text: m.text
+      }));
+
+      setMessages([
+        { 
+          id: 'welcome-msg', 
+          senderRole: 'BOT', 
+          text: 'Hi there! Welcome back to SlipZMarket support.' 
+        },
+        ...formattedHistory
+      ]);
+
+      if (response.data.sessionId) {
+        setSessionId(response.data.sessionId);
       }
     } catch (error) {
       console.error("Failed to load history:", error);
@@ -90,6 +137,9 @@ const handleSendMessage = async (e) => {
       );
 
       console.log("Server Response:", response.data); // See what the server says
+      if (response.data.sessionId) {
+        setSessionId(response.data.sessionId);
+      }
       
       if (response.data.botResponse) {
         setMessages(prev => [...prev, { 
@@ -123,7 +173,7 @@ const handleSendMessage = async (e) => {
             : 'scale-0 opacity-0 h-0 w-0 mb-0 pointer-events-none'
         }`}
       >
-        <div className="w-[350px] h-[500px] bg-white rounded-2xl shadow-2xl border border-[#e8e2e2] flex flex-col overflow-hidden">
+        <div style={{ width: 350, height: 500 }} className="bg-white rounded-2xl shadow-2xl border border-[#e8e2e2] flex flex-col overflow-hidden">
           
           {/* Chat Header */}
           <div className="bg-[#800000] text-white p-4 flex items-center justify-between shadow-md z-10">
