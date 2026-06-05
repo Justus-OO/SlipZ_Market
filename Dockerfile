@@ -50,13 +50,13 @@ COPY --from=frontend-build /app/frontend/dist /var/www/html
 COPY --from=backend-build /app/api/dist ./api/dist
 COPY --from=backend-build /app/api/package*.json ./api/
 COPY --from=backend-build /app/api/node_modules ./api/node_modules
-
 COPY --from=backend-build /app/api/src/generated /app/api/dist/generated
 
-# Setup Nginx configuration
+# 3. Setup Nginx configuration and ensure it is activated
 COPY ./nginx.conf /etc/nginx/sites-available/default
+RUN ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
 
 EXPOSE 80
 
-# Clean execution: Start Nginx as a background daemon, then pass process control to Node
-CMD service nginx start && node api/dist/index.js
+# 4. Clean execution: Explicitly use shell array syntax to prevent Status 128 crashes
+CMD ["/bin/sh", "-c", "service nginx start && node api/dist/index.js"]
