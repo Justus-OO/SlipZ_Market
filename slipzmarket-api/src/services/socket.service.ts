@@ -94,6 +94,13 @@ export const SocketService = {
     }
   },
 
+  // Returns true if any socket is currently joined to the named room
+  roomHasMembers(roomName: string) {
+    if (!io) return false;
+    const room = io.sockets.adapter.rooms.get(roomName);
+    return !!room && room.size > 0;
+  },
+
   // Notify a specific user in their private chat session room
   notifyUser(sessionId: string, eventName: string, payload: any) {
     if (io) {

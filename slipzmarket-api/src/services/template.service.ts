@@ -79,6 +79,10 @@ export const TemplateService = {
         subject: `We missed you, ${context.firstName || 'there'}!`,
         html: `<p>Hi ${context.firstName || 'there'},</p><p>You left a chat session open with our support team. We are still here to help!</p><p>Best,<br/>The SlipZMarket Team</p>`
       },
+      'admin_chat_alert': {
+        subject: `New support message received while no admin is online`,
+        html: `<p>Hi Admin,</p><p>A customer sent a new message while no support agent was actively connected.</p><p><strong>Customer:</strong> ${context.customerName || 'Unknown'}</p><p><strong>Email:</strong> ${context.customerEmail || 'Unknown'}</p><p><strong>Message:</strong><br/>${context.message || 'No message text available'}</p><p><a href="${context.link}">Open the admin chat</a></p><p>Best,<br/>SlipZMarket</p>`
+      },
       'default': {
         subject: 'Notification from SlipZMarket',
         html: '<p>You have a new notification regarding your account.</p>'

@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import { API_URL, SOCKET_URL } from '../../utils/api';
 import { 
   Search, Send, MessageCircle, User, Loader2, 
-  ChevronRight, Shield, Phone, 
+  ChevronRight, Shield, Phone, CornerDownLeft,
   Paperclip, MoreVertical, Bot, Headset, Star, Trash2, Copy, CheckCircle
 } from 'lucide-react';
 
@@ -90,6 +90,44 @@ export const AdminSupport = () => {
       }
     });
 
+    socketRef.current.on('agent_reply', (payload) => {
+      const incoming = payload?.message || payload;
+      if (!incoming || !payload?.sessionId) return;
+
+      if (activeSessionIdRef.current === payload.sessionId) {
+        setMessages(prev => {
+          if (prev.find(m => m.id === incoming.id)) return prev;
+          return [...prev, incoming];
+        });
+      }
+    });
+
+    socketRef.current.on('session_updated', (updatedSession) => {
+      if (!updatedSession?.id) return;
+      setSessions(prev => {
+        if (updatedSession.status === 'CLOSED') {
+          return prev.filter(s => s.id !== updatedSession.id);
+        }
+        return prev.map(s => s.id === updatedSession.id ? { ...s, ...updatedSession } : s);
+      });
+      if (activeSessionIdRef.current === updatedSession.id) {
+        if (updatedSession.status === 'CLOSED') {
+          setActiveSession(null);
+          activeSessionIdRef.current = null;
+        } else {
+          setActiveSession(prev => prev ? { ...prev, ...updatedSession } : prev);
+        }
+      }
+    });
+
+    socketRef.current.on('session_closed', ({ sessionId }) => {
+      setSessions(prev => prev.filter(s => s.id !== sessionId));
+      if (activeSessionIdRef.current === sessionId) {
+        setActiveSession(null);
+        activeSessionIdRef.current = null;
+      }
+    });
+
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
     }
@@ -149,12 +187,14 @@ export const AdminSupport = () => {
     const token = localStorage.getItem('slipz_token');
 
     try {
-      const res = await axios.patch(`${API_URL}/chat/admin/sessions/${activeSession.id}/status`,
-        { status: 'CLOSED' },
+      await axios.patch(`${API_URL}/chat/admin/sessions/${activeSession.id}/resolve`,
+        {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setActiveSession(res.data.session);
-      setSessions(prev => prev.map(s => s.id === activeSession.id ? res.data.session : s));
+
+      setSessions(prev => prev.filter(s => s.id !== activeSession.id));
+      setActiveSession(null);
+      activeSessionIdRef.current = null;
     } catch (err) {
       console.error('Failed to resolve session:', err);
     }
@@ -169,8 +209,10 @@ export const AdminSupport = () => {
         { status: 'AWAITING_AGENT' },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setActiveSession(res.data.session);
-      setSessions(prev => prev.map(s => s.id === activeSession.id ? res.data.session : s));
+
+      const updatedSession = { ...activeSession, ...res.data.session };
+      setActiveSession(updatedSession);
+      setSessions(prev => prev.map(s => s.id === activeSession.id ? updatedSession : s));
     } catch (err) {
       console.error('Failed to escalate session:', err);
     }
@@ -210,9 +252,23 @@ export const AdminSupport = () => {
     }
   };
 
+  const handleCopyMessage = async (messageText) => {
+    try {
+      await navigator.clipboard.writeText(messageText);
+    } catch (err) {
+      console.error('Failed to copy message:', err);
+    }
+  };
+
+  const handleQuoteMessage = (messageText) => {
+    const quoted = `> ${messageText.replace(/\n/g, '\n> ')}\n\n`;
+    setReply(prev => (prev ? `${prev}\n${quoted}` : quoted));
+  };
+
   const handleDeleteMessage = async (messageId) => {
     if (!window.confirm('Delete this message permanently?')) return;
 
+    const previousMessages = messages;
     setMessages(prev => prev.filter(m => m.id !== messageId));
 
     try {
@@ -222,6 +278,7 @@ export const AdminSupport = () => {
       });
     } catch (err) {
       console.error('Failed to delete message:', err);
+      setMessages(previousMessages);
     }
   };
 
@@ -362,16 +419,23 @@ export const AdminSupport = () => {
                         <button
                           onClick={() => handleStarMessage(m.id, m.isStarred)}
                           className="p-1 text-[#7a6b6b] hover:text-[#800000] hover:bg-[#f5f2f2] rounded transition-colors"
-                          title="Star message"
+                          title={m.isStarred ? 'Unstar message' : 'Star message'}
                         >
                           <Star size={14} className={m.isStarred ? 'fill-[#800000] text-[#800000]' : ''} />
                         </button>
                         <button
-                          onClick={() => navigator.clipboard.writeText(m.text)}
+                          onClick={() => handleCopyMessage(m.text)}
                           className="p-1 text-[#7a6b6b] hover:text-[#800000] hover:bg-[#f5f2f2] rounded transition-colors"
                           title="Copy message"
                         >
                           <Copy size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleQuoteMessage(m.text)}
+                          className="p-1 text-[#7a6b6b] hover:text-[#800000] hover:bg-[#f5f2f2] rounded transition-colors"
+                          title="Quote message"
+                        >
+                          <CornerDownLeft size={14} />
                         </button>
                         <button
                           onClick={() => handleDeleteMessage(m.id)}

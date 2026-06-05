@@ -1,7 +1,8 @@
 import prisma from '../db.js';
 import { ChatStatus, Prisma } from '../generated/client/index.js';
 import { SocketService } from './socket.service.js';
-import { NotificationService } from './notification.service.js'; // 👈 Added Import
+import { NotificationService } from './notification.service.js';
+import { MailerService } from './mailer.service.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -97,6 +98,13 @@ export const ChatEngineService = {
 
     // 5. Notify admins of a live incoming message right away
     SocketService.notifyAdmins('new_message', messagePayload);
+
+    // 5b. If no admin is currently connected to the admin support room, send an email + persistent admin notification
+    if (!SocketService.roomHasMembers('admin_room')) {
+      this.notifyAdminsOffline(session, savedUserMsg).catch(error => {
+        console.error('Failed to send offline-admin alerts:', error);
+      });
+    }
 
     // 6. If we are already in a human-handled session, notify the assigned agent immediately
     if (session.status !== 'BOT_HANDLING') {
@@ -211,6 +219,51 @@ export const ChatEngineService = {
     });
   },
 
+  async notifyAdminsOffline(session: any, savedUserMsg: any) {
+    const admins = await prisma.user.findMany({
+      where: { role: 'ADMIN' },
+      select: { id: true, email: true, firstName: true }
+    });
+
+    if (!admins.length) return;
+
+    const shortMessage = savedUserMsg.text.length > 200
+      ? `${savedUserMsg.text.slice(0, 197)}...`
+      : savedUserMsg.text;
+
+    const emailContext = {
+      customerName: session.user?.firstName || 'Unknown customer',
+      customerEmail: session.user?.email || 'Unknown email',
+      message: shortMessage,
+      link: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/admin/chat/${session.id}`
+    };
+
+    const notificationPayload = {
+      title: 'New chat message while no admin is online',
+      message: `A customer message arrived and no admin was connected to support. Customer: ${session.user?.firstName || 'Unknown'}.`,
+      type: 'MESSAGE' as const,
+      link: `/admin/chat/${session.id}`
+    };
+
+    await Promise.all(admins.map(async (admin) => {
+      try {
+        await NotificationService.sendToUser(admin.id, notificationPayload);
+      } catch (err) {
+        console.error('Failed to save admin notification:', err);
+      }
+
+      try {
+        await MailerService.send({
+          to: admin.email,
+          templateName: 'admin_chat_alert',
+          context: emailContext
+        });
+      } catch (err) {
+        console.error('Failed to send admin alert email:', err);
+      }
+    }));
+  },
+
   async getKnowledgeContext(userText: string) {
     const normalized = userText.toLowerCase();
     const categories: string[] = [];
@@ -233,16 +286,16 @@ export const ChatEngineService = {
     const queryText = `%${userText}%`;
     const hasCategories = categories.length > 0;
 
-    const knowledgeEntries = await prisma.$queryRawUnsafe(
-      `SELECT id, category, question, answer
+    const rawQuery = `SELECT id, category, question, answer
        FROM "AiKnowledge"
        WHERE question ILIKE $1
        ${hasCategories ? 'OR category = ANY($2)' : ''}
        ORDER BY "updatedAt" DESC
-       LIMIT 8`,
-      queryText,
-      hasCategories ? categories : []
-    );
+       LIMIT 8`;
+
+    const queryParams = hasCategories ? [queryText, categories] : [queryText];
+
+    const knowledgeEntries = await prisma.$queryRawUnsafe(rawQuery, ...queryParams);
 
     if (!Array.isArray(knowledgeEntries) || knowledgeEntries.length === 0) {
       return '';

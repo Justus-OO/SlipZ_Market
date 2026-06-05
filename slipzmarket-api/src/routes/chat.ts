@@ -142,10 +142,33 @@ router.patch('/admin/sessions/:sessionId/status', requireAuth, requireAdmin, asy
       data: { status }
     });
 
+    SocketService.notifyAdmins('session_updated', session);
+    if (status === 'CLOSED') {
+      SocketService.notifyUser(sessionId, 'session_closed', { sessionId });
+    }
+
     return res.json({ success: true, session });
   } catch (error: any) {
     console.error('Failed to update session status:', error);
     return res.status(500).json({ success: false, error: 'Failed to update session status' });
+  }
+});
+
+router.patch('/admin/sessions/:sessionId/resolve', requireAuth, requireAdmin, async (req: any, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await prisma.chatSession.update({
+      where: { id: sessionId },
+      data: { status: 'CLOSED' }
+    });
+
+    SocketService.notifyAdmins('session_updated', session);
+    SocketService.notifyUser(sessionId, 'session_closed', { sessionId });
+
+    return res.json({ success: true, session });
+  } catch (error: any) {
+    console.error('Failed to resolve session:', error);
+    return res.status(500).json({ success: false, error: 'Failed to resolve session' });
   }
 });
 
