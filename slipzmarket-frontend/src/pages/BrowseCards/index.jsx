@@ -6,8 +6,12 @@ import {
   Search, ShieldCheck, X, ShoppingCart,
   Mail, Phone, Database, SlidersHorizontal,
   Lock, Check, MoreVertical, Activity,
-  Loader2
+  Loader2, LogIn
 } from 'lucide-react';
+import { 
+  addToLocalCart, 
+  isLoggedIn, markPendingSync 
+} from '../../utils/sessionCart';
 
 const BrowseLeads = () => {
   const { t } = useTranslation();
@@ -19,6 +23,12 @@ const BrowseLeads = () => {
   const [activeCategory, setActiveCategory] = useState('All Leads');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRows, setSelectedRows] = useState([]);
+
+  const categories = [
+    { value: 'All Leads', label: 'All Leads', icon: Database },
+    { value: 'Email Leads', label: 'Precision Email', icon: Mail },
+    { value: 'Phone Leads', label: 'Direct Dial', icon: Phone },
+  ];
   
   // --- MODAL & DRAWER STATES ---
   const [selectedPackage, setSelectedPackage] = useState(null);
@@ -27,6 +37,7 @@ const BrowseLeads = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
+  const [showGuestAddedModal, setShowGuestAddedModal] = useState(false);
   const toastTimerRef = useRef(null);
   
 
@@ -67,16 +78,51 @@ const BrowseLeads = () => {
   
   setIsAdding(true);
   try {
-    // Send to backend
-    await axios.post(`${API_URL}/cart/add`, 
-      { packageId: selectedPackage.id }, 
-      { headers: { Authorization: `Bearer ${localStorage.getItem('slipz_token')}` } }
-    );
+    const token = localStorage.getItem('slipz_token');
+    const loggedIn = isLoggedIn();
+
+    // Always save to local cart (persistent) - store minimal JSON-safe snapshot
+    const pkg = selectedPackage;
+    const snapshot = {
+      id: pkg.id,
+      brand: pkg.brand || pkg.name || '',
+      price: Number(pkg.price || 0),
+      category: pkg.category || 'Lead Package',
+      leadsCount: Number(pkg.leadsCount || 0),
+    };
+    addToLocalCart({ id: selectedPackage.id, package: snapshot, quantity: 1 });
     
-    showToast('Added to cart!');
+    // Notify sidebar and other components of cart update
+    window.dispatchEvent(new Event('cartUpdated'));
+
+    if (loggedIn) {
+      // If logged in, also sync to backend
+      try {
+        await axios.post(`${API_URL}/cart/add`, 
+          { packageId: selectedPackage.id }, 
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        showToast('✓ Added to cart!');
+      } catch (err) {
+        if (err.response?.status === 401) {
+          showToast('Session expired. Saved to local cart');
+        } else {
+          // Still saved locally even if sync fails
+          showToast('✓ Saved locally (check connection)');
+        }
+      }
+    } else {
+      // Not logged in - just local storage
+      showToast('✓ Added to cart!');
+      markPendingSync(); // Mark for sync when user logs in later
+      // Show guest CTA modal after a brief delay
+      setTimeout(() => setShowGuestAddedModal(true), 500);
+    }
+    
     setSelectedPackage(null);
   } catch (err) {
     console.error("Cart error:", err);
+    showToast('Error adding to cart. Please try again');
   } finally {
     setIsAdding(false);
   }
@@ -108,6 +154,8 @@ const BrowseLeads = () => {
 
   const filteredPackages = getFilteredPackages();
   const bulkTotal = filteredPackages.filter(p => selectedRows.includes(p.id)).reduce((acc, curr) => acc + curr.price, 0);
+  const packageCount = packages.length;
+  const selectedCount = selectedRows.length;
 
   return (
     <div className="flex flex-col h-full min-h-screen bg-app font-sans selection:bg-accent selection:text-surface pb-16">
@@ -120,29 +168,31 @@ const BrowseLeads = () => {
               <Database size={20} className="text-muted" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-primary tracking-tight leading-tight">{t('leadDatabase')}</h1>
+              <h1 className="text-lg font-bold text-primary tracking-tight leading-tight">{t('leadDatabase')}</h1>
               <div className="flex items-center gap-2 mt-0.5 text-[13px] text-muted font-medium">
-                <span className="flex items-center gap-1.5"><ShieldCheck size={14} className="text-muted"/> {t('verifiedNetwork')}</span>
+                <span className="flex items-center gap-1.5"><ShieldCheck size={12} className="text-muted"/> {t('verifiedNetwork')}</span>
                 <span className="opacity-50">•</span>
                 <span>270M+ Contacts Available</span>
+                <span className="opacity-50">•</span>
+                <span className="font-semibold text-[#8b6f5a]">Built for growth teams craving high-conversion data.</span>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-3 w-full md:w-auto">
-            <div className="flex items-center w-full md:w-80 bg-surface border border-theme rounded-lg px-4 py-2.5 shadow-sm focus-within:border-accent focus-within:ring-1 focus-within:ring-accent transition-all">
+            <div className="flex items-center w-full md:w-72 bg-surface border border-theme rounded-lg px-3 py-2 shadow-sm focus-within:border-accent focus-within:ring-1 focus-within:ring-accent transition-all">
               <Search size={16} className="text-muted opacity-70" />
               <input 
                 type="text" 
                 placeholder="Search packages or volumes..." 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-transparent border-none outline-none text-[14px] text-primary w-full px-3 placeholder:text-muted placeholder:opacity-60"
+                className="bg-transparent border-none outline-none text-[11px] text-primary w-full px-2 placeholder:text-muted placeholder:opacity-60"
               />
             </div>
             <button 
               onClick={() => setIsFilterModalOpen(true)}
-              className="flex items-center gap-2 bg-surface border border-theme text-primary hover:bg-surface px-4 py-2.5 rounded-lg shadow-sm transition-all text-[14px] font-bold"
+              className="flex items-center gap-2 bg-surface border border-theme text-primary hover:bg-surface px-3 py-2 rounded-lg shadow-sm transition-all text-[11px] font-bold"
             >
               <SlidersHorizontal size={16} className="text-[#8b6f5a]" /> {t('filters')}
             </button>
@@ -152,59 +202,131 @@ const BrowseLeads = () => {
 
       {toastVisible && (
         <div className="fixed right-6 top-24 z-50 max-w-xs">
-          <div className="rounded-2xl bg-emerald-600 px-5 py-4 shadow-2xl shadow-black/10 text-white">
+          <div className="rounded-2xl bg-emerald-600 px-4 py-3 shadow-2xl shadow-black/10 text-white">
             <p className="text-sm font-bold">Success</p>
             <p className="mt-1 text-[13px] leading-snug">{toastMessage}</p>
           </div>
         </div>
       )}
 
+      {/* Guest Added Modal CTA */}
+      {showGuestAddedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 animate-in zoom-in-95">
+            <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <ShoppingCart size={32} />
+            </div>
+            <h3 className="text-center text-lg font-black text-[#2a1b1b] tracking-tight">Item Added to Cart!</h3>
+            <p className="text-center text-[12px] text-[#7a6b6b] mt-3 leading-relaxed">
+              Your package is saved locally. Sign in to your SlipZMarket account to review your cart and complete checkout with instant data access.
+            </p>
+            <div className="flex flex-col gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowGuestAddedModal(false);
+                  window.location.href = '/cart';
+                }}
+                className="w-full bg-white border-2 border-[#800000] hover:bg-[#800000]/5 text-[#800000] py-2.5 rounded-lg text-[12px] font-bold transition-all"
+              >
+                View Cart
+              </button>
+              <button
+                onClick={() => {
+                  setShowGuestAddedModal(false);
+                  window.location.href = '/auth?redirect=/cart';
+                }}
+                className="w-full bg-[#800000] hover:bg-[#660000] text-white py-2.5 rounded-lg text-[12px] font-bold transition-all shadow-md flex items-center justify-center gap-2"
+              >
+                <LogIn size={16} /> Sign In Now
+              </button>
+            </div>
+            <button
+              onClick={() => setShowGuestAddedModal(false)}
+              className="mt-4 w-full text-[11px] font-bold text-[#7a6b6b] hover:text-[#2a1b1b] py-2 transition-colors"
+            >
+              Continue Shopping
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* --- MAIN WORKSPACE --- */}
-      <div className="flex flex-col lg:flex-row gap-8 px-0 mt-8 w-full items-start">
+      <div className="flex flex-col gap-8 px-0 mt-6 w-full">
         
-        {/* LEFT: Structured Filter Pane */}
-        <div className="w-full lg:w-64 shrink-0 flex flex-col gap-8 sticky top-32">
-          <div>
-            <h3 className="text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest mb-3 px-1">{t('savedSearches')}</h3>
-            <div className="flex flex-col gap-1">
-              {['All Leads', 'Email Leads', 'Phone Leads'].map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => { setActiveCategory(cat); setSelectedRows([]); }}
-                  className={`flex items-center justify-between px-4 py-3 rounded-xl text-[14px] font-bold transition-all ${
-                    activeCategory === cat 
-                      ? 'bg-white border border-[#d6c9b8] text-[#3b2a23] shadow-sm' 
-                      : 'border border-transparent text-[#8b6f5a] hover:bg-white/50 hover:text-[#3b2a23]'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    {cat === 'All Leads' && <Database size={16} className={activeCategory === cat ? 'text-[#8b6f5a]' : 'opacity-70'} />}
-                    {cat === 'Email Leads' && <Mail size={16} className={activeCategory === cat ? 'text-[#8b6f5a]' : 'opacity-70'} />}
-                    {cat === 'Phone Leads' && <Phone size={16} className={activeCategory === cat ? 'text-[#8b6f5a]' : 'opacity-70'} />}
-                    {cat}
-                  </div>
-                  {activeCategory === cat && <span className="text-[11px] font-bold bg-[#faf6f0] px-2 py-0.5 rounded-full text-[#8b6f5a] border border-[#d6c9b8]">{filteredPackages.length}</span>}
-                </button>
-              ))}
+        {/* CATEGORY BUTTONS - PLAYFUL */}
+        <div className="flex items-center justify-between py-1">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Mail size={20} className="text-blue-600" />
+              <span className="text-[11px] font-bold text-gray-700">Gmail</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Phone size={20} className="text-amber-600" />
+              <span className="text-[11px] font-bold text-gray-700">Phone</span>
             </div>
           </div>
-
-          <div className="h-px w-full bg-[#d6c9b8] opacity-50" />
-
-          <div className="px-1">
-            <h3 className="text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest mb-4">{t('dataQuality')}</h3>
-            <label className="flex items-center gap-3 cursor-pointer group">
-              <input type="checkbox" defaultChecked className="w-4 h-4 rounded border-[#d6c9b8] text-[#8b6f5a] focus:ring-[#8b6f5a] cursor-pointer" />
-              <span className="text-[14px] font-medium text-[#3b2a23] opacity-80 group-hover:opacity-100 transition-opacity">{t('verifiedEmailsOnly')}</span>
-            </label>
-            <label className="flex items-center gap-3 cursor-pointer group mt-4">
-              <input type="checkbox" defaultChecked className="w-4 h-4 rounded border-[#d6c9b8] text-[#8b6f5a] focus:ring-[#8b6f5a] cursor-pointer" />
-              <span className="text-[14px] font-medium text-[#3b2a23] opacity-80 group-hover:opacity-100 transition-opacity">{t('includeDirectDials')}</span>
-            </label>
+          <div className="flex flex-wrap gap-2 justify-end">
+            {categories.map((cat) => {
+              const Icon = cat.icon;
+              const colors = {
+                'All Leads': 'from-slate-400 to-slate-600',
+                'Email Leads': 'from-blue-400 to-blue-600',
+                'Phone Leads': 'from-amber-400 to-amber-600',
+              };
+              const bgGradient = colors[cat.value] || 'from-gray-400 to-gray-600';
+              
+              return (
+                <button
+                  key={cat.value}
+                  onClick={() => { setActiveCategory(cat.value); setSelectedRows([]); }}
+                  className={`group relative px-3 py-2 rounded-full text-[11px] font-bold transition-all flex items-center gap-1.5 ${
+                    activeCategory === cat.value
+                      ? `bg-linear-to-r ${bgGradient} text-white shadow-lg shadow-${bgGradient.split('-')[1]}-300/50 scale-105`
+                      : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
+                  }`}
+                >
+                  <Icon size={14} className={activeCategory === cat.value ? 'text-white' : 'text-gray-600'} />
+                  {cat.label}
+                  {activeCategory === cat.value && (
+                    <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/30 text-[9px] font-bold text-white">
+                      {filteredPackages.length}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* RIGHT: High-Density Data Table */}
+        {/* CONTROL BAR */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between bg-linear-to-r from-slate-50 to-blue-50 rounded-3xl p-5 border border-slate-200">
+          <div className="flex flex-wrap gap-2 text-[11px]">
+            <span className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border border-slate-200 text-slate-700 font-semibold">
+              📊 {packageCount} total
+            </span>
+            <span className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border border-slate-200 text-slate-700 font-semibold">
+              🔍 {filteredPackages.length} shown
+            </span>
+            <span className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border border-slate-200 text-slate-700 font-semibold">
+              ✅ {selectedCount} picked
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setIsFilterModalOpen(true)}
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-full border-2 border-slate-300 bg-white text-slate-700 text-[12px] font-bold hover:border-slate-400 hover:bg-slate-50 transition-all"
+            >
+              <SlidersHorizontal size={16} /> Filters
+            </button>
+            <button
+              onClick={handleAddToCart}
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-linear-to-r from-emerald-400 to-emerald-600 text-white text-[12px] font-bold shadow-lg hover:shadow-xl hover:scale-105 transition-all"
+            >
+              <ShoppingCart size={16} /> Add to Cart
+            </button>
+          </div>
+        </div>
+
         <div className="flex-1 w-full flex flex-col gap-5">
           
           {/* Bulk Action Bar */}
@@ -216,12 +338,12 @@ const BrowseLeads = () => {
               <span className="text-[14px] text-[#3b2a23] font-medium">Total Value: <span className="font-bold font-mono ml-1">£{bulkTotal.toFixed(2)}</span></span>
             </div>
             <div className="flex gap-3 w-full sm:w-auto">
-              <button className="flex-1 sm:flex-none text-[13px] font-bold text-[#3b2a23] hover:bg-[#faf6f0] px-4 py-2 border border-[#d6c9b8] rounded-lg bg-white shadow-sm transition-colors">
+              <button className="flex-1 sm:flex-none text-[11px] font-bold text-[#3b2a23] hover:bg-[#faf6f0] px-3 py-2 border border-[#d6c9b8] rounded-lg bg-white shadow-sm transition-colors">
                 Export Preview
               </button>
               <button 
                 onClick={handleAddToCart}
-                className="flex-1 sm:flex-none text-[13px] font-bold text-white bg-[#8b6f5a] hover:bg-[#6c5544] px-5 py-2 rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2"
+                className="flex-1 sm:flex-none text-[11px] font-bold text-white bg-[#8b6f5a] hover:bg-[#6c5544] px-4 py-2 rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2"
               >
                 <ShoppingCart size={16} /> Add to Cart
               </button>
@@ -234,7 +356,7 @@ const BrowseLeads = () => {
               <table className="w-full text-left border-collapse min-w-225">
                 <thead>
                   <tr className="bg-[#faf6f0] border-b border-[#d6c9b8]">
-                    <th className="w-14 px-5 py-4 text-center">
+                    <th className="w-14 px-3 py-3 text-center">
                       <input 
                         type="checkbox" 
                         onChange={(e) => toggleAllRows(e, filteredPackages)}
@@ -242,12 +364,12 @@ const BrowseLeads = () => {
                         className="w-4 h-4 rounded border-[#d6c9b8] text-[#8b6f5a] focus:ring-[#8b6f5a] cursor-pointer" 
                       />
                     </th>
-                    <th className="px-5 py-4 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Dataset Specification</th>
-                    <th className="px-5 py-4 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Volume</th>
-                    <th className="px-5 py-4 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Deliverability</th>
-                    <th className="px-5 py-4 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest text-right">Cost / Lead</th>
-                    <th className="px-5 py-4 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest text-right">Total</th>
-                    <th className="w-16 px-5 py-4 text-center"></th>
+                    <th className="px-3 py-3 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Dataset Specification</th>
+                    <th className="px-3 py-3 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Volume</th>
+                    <th className="px-3 py-3 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Deliverability</th>
+                    <th className="px-3 py-3 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest text-right">Cost / Lead</th>
+                    <th className="px-3 py-3 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest text-right">Total</th>
+                    <th className="w-16 px-3 py-3 text-center"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#d6c9b8]/50">
@@ -273,7 +395,7 @@ const BrowseLeads = () => {
                           className={`transition-colors cursor-pointer ${isSelected ? 'bg-[#faf6f0]' : 'hover:bg-[#f5efe6]/50'}`}
                           onClick={() => { setSelectedPackage(pkg); setDetailsTab('overview'); }}
                         >
-                          <td className="px-5 py-4 text-center" onClick={(e) => toggleRowSelection(e, pkg.id)}>
+                          <td className="px-3 py-3 text-center" onClick={(e) => toggleRowSelection(e, pkg.id)}>
                             <input 
                               type="checkbox" 
                               checked={isSelected}
@@ -281,33 +403,36 @@ const BrowseLeads = () => {
                               className="w-4 h-4 rounded border-[#d6c9b8] text-[#8b6f5a] focus:ring-[#8b6f5a] cursor-pointer" 
                             />
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-3 py-3">
                             <div className="flex flex-col">
-                              <span className="text-[14px] font-bold text-[#3b2a23] group-hover:text-[#8b6f5a] transition-colors flex items-center gap-2">
-                                {pkg.category === 'Email Leads' ? <Mail size={16} className="text-[#8b6f5a]" /> : <Phone size={16} className="text-[#8b6f5a]" />}
-                                {pkg.brand}
-                              </span>
-                              <span className="text-[12px] text-[#8b6f5a] mt-1 font-medium">Updated: {pkg.lastUpdated} • {pkg.type}</span>
+                                      <span className="text-[12px] font-bold text-[#3b2a23] group-hover:text-[#8b6f5a] transition-colors flex items-center gap-2">
+                              {pkg.category === 'Email Leads' ? <Mail size={14} className="text-[#8b6f5a]" /> : pkg.category === 'Phone Leads' ? <Phone size={14} className="text-[#8b6f5a]" /> : <Activity size={14} className="text-[#8b6f5a]" />}
+                              {pkg.brand}
+                            </span>
+                            <div className="mt-1 flex flex-wrap gap-2 items-center">
+                              <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-[#8b6f5a] bg-[#faf6f0] px-2 py-1 rounded-full border border-[#d6c9b8]">{pkg.category}</span>
+                              <span className="text-[10px] text-[#8b6f5a]">{pkg.type}</span>
+                            </div>
                             </div>
                           </td>
-                          <td className="px-5 py-4">
-                            <span className="text-[13px] font-bold text-[#3b2a23] bg-[#faf6f0] px-2.5 py-1 rounded-md border border-[#d6c9b8]">
+                          <td className="px-3 py-3">
+                            <span className="text-[10px] font-bold text-[#3b2a23] bg-[#faf6f0] px-2 py-1 rounded-md border border-[#d6c9b8]">
                               {pkg.leadsCount.toLocaleString()}
                             </span>
                           </td>
-                          <td className="px-5 py-4">
-                            <div className="flex items-center gap-1.5">
-                              <Activity size={14} className="text-emerald-600" />
-                              <span className="text-[14px] font-medium text-[#3b2a23]">{pkg.deliverability}</span>
+                          <td className="px-3 py-3">
+                            <div className="flex items-center gap-1">
+                              <Activity size={12} className="text-emerald-600" />
+                              <span className="text-[11px] font-medium text-[#3b2a23]">{pkg.deliverability}</span>
                             </div>
                           </td>
-                          <td className="px-5 py-4 text-right">
-                            <span className="text-[13px] font-mono text-[#8b6f5a]">£{pkg.unitPrice.toFixed(2)}</span>
+                          <td className="px-3 py-3 text-right">
+                            <span className="text-[11px] font-mono text-[#8b6f5a]">£{pkg.unitPrice.toFixed(2)}</span>
                           </td>
-                          <td className="px-5 py-4 text-right">
-                            <span className="text-[15px] font-mono font-bold text-[#3b2a23]">£{pkg.price.toFixed(2)}</span>
+                          <td className="px-3 py-3 text-right">
+                            <span className="text-[12px] font-mono font-bold text-[#3b2a23]">£{pkg.price.toFixed(2)}</span>
                           </td>
-                          <td className="px-5 py-4 text-center">
+                          <td className="px-3 py-3 text-center">
                             <button 
                               className="p-2 text-[#8b6f5a] hover:text-[#3b2a23] hover:bg-[#d6c9b8]/30 rounded-lg transition-colors"
                               onClick={(e) => { e.stopPropagation(); }}
@@ -323,7 +448,7 @@ const BrowseLeads = () => {
               </table>
             </div>
             
-            <div className="px-6 py-4 border-t border-[#d6c9b8] bg-[#faf6f0] flex items-center justify-between">
+            <div className="px-4 py-3 border-t border-[#d6c9b8] bg-[#faf6f0] flex items-center justify-between">
               <span className="text-[12px] text-[#8b6f5a] font-bold uppercase tracking-wider">{filteredPackages.length} datasets available</span>
               <div className="flex items-center gap-3">
                 <button className="text-[13px] font-bold text-[#8b6f5a] opacity-50 cursor-not-allowed transition-colors" disabled>Previous</button>

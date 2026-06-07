@@ -1,3 +1,4 @@
+import React from 'react';
 import Sidebar from '../components/shared/Sidebar';
 import Header from '../components/shared/Header';
 import Footer from '../components/shared/Footer';
@@ -19,7 +20,7 @@ const MainLayout = ({ children }) => {
 
         {/* 4. The "Canvas" (Main Content Area) */}
         <div className="flex-1 flex flex-col overflow-hidden relative bg-surface shadow-[inset_1px_0_0_0_rgba(0,0,0,0.05)]">
-          <div className="absolute top-0 left-0 w-full h-3 bg-linear-to-b from-slate-200/50 to-transparent pointer-events-none z-10" />
+          <div className="absolute top-0 left-0 w-full h-3 bg-gradient-to-b from-slate-200/50 to-transparent pointer-events-none z-10" />
 
           {/* Scrollable Region */}
           <main className="flex-1 overflow-y-auto custom-scrollbar flex flex-col w-full relative scroll-smooth">

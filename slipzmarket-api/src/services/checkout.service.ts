@@ -8,7 +8,7 @@ const NotificationService = (NotificationModule as any).NotificationService
   || (NotificationModule as any);
 
 export const CheckoutService = {
-  async completeOrder(
+async completeOrder(
     userId: string, 
     workspaceId: string, 
     stripeIntentId: string, 
@@ -16,13 +16,11 @@ export const CheckoutService = {
     billingDetails?: { companyName: string; firstName: string; lastName: string; email: string; } 
   ) {
     
-    // Fetch user upfront so we have their email in case the transaction fails
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, firstName: true } });
     const targetEmail = billingDetails?.email?.trim() || user?.email;
     const targetName = billingDetails?.firstName?.trim() || user?.firstName || 'User';
     const shouldUpsertBilling = billingDetails && typeof billingDetails === 'object' && billingDetails.email?.trim();
 
-    // 1. FAST IDEMPOTENCY CHECK
     const existingInvoice = await prisma.invoice.findUnique({ 
       where: { id: `INV-${stripeIntentId}` },
       include: { workspace: { include: { users: true } } } 
@@ -35,7 +33,6 @@ export const CheckoutService = {
 
     try {
       const result = await prisma.$transaction(async (tx) => {
-        // 2. Fetch cart items
         const cartItems = await tx.cartItem.findMany({ 
           where: { userId },
           include: { package: true } 
@@ -45,13 +42,13 @@ export const CheckoutService = {
           throw new Error('ORDER_ABORTED: Cart is empty or was already cleared.');
         }
 
-        // 3. PRICE INTEGRITY VERIFICATION (Anti-Tamper Check)
+        const totalLeadsBought = cartItems.reduce((acc, item) => acc + (item.package.leadsCount * item.quantity), 0);
         const calculatedTotal = cartItems.reduce((acc, item) => acc + (Number(item.package.price) * item.quantity), 0);
+        
         if (Math.abs(calculatedTotal - stripeAmountPaid) > 0.01) { 
           throw new Error(`ORDER_ABORTED: Price mismatch. Cart Total: £${calculatedTotal}, Paid: £${stripeAmountPaid}`);
         }
 
-        // 4. Upsert Billing Profile only when the billing email is present
         if (shouldUpsertBilling) {
           await tx.billingProfile.upsert({
             where: { userId },
@@ -60,7 +57,6 @@ export const CheckoutService = {
           });
         }
 
-        // 5. ATOMIC INVOICE CREATION
         let invoice;
         try {
           invoice = await tx.invoice.create({
@@ -80,21 +76,24 @@ export const CheckoutService = {
             }
           });
         } catch (error: any) {
-          // ULTIMATE RACE CONDITION GUARD
           if (error.code === 'P2002') {
-            console.warn(`[CHECKOUT] Race condition mitigated for ${stripeIntentId}.`);
             const duplicate = await tx.invoice.findUnique({ where: { id: `INV-${stripeIntentId}` } });
             return { invoice: duplicate, isDuplicate: true, receiptData: { totalLeadsUnlocked: 0 } };
           }
-          throw error; // Rethrow to trigger rollback
+          throw error;
         }
 
-        // 6. BUSINESS LOGIC: Dynamic Data Allocation (Unlocking Leads)
-        let totalLeadsUnlocked = 0;
+        // --- NEW: INCREMENT USER CREDITS ---
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            exportCreditsTotal: { increment: totalLeadsBought }
+          }
+        });
 
+        let totalLeadsUnlocked = 0;
         for (const item of cartItems) {
           const requiredLeadsCount = item.package.leadsCount * item.quantity;
-
           const alreadyOwned = await tx.unlockedLead.findMany({
             where: { workspaceId },
             select: { leadId: true }
@@ -107,12 +106,10 @@ export const CheckoutService = {
             select: { id: true }
           });
 
-          // C. Inventory Check: Abort transaction if we run out of fresh data
           if (freshLeads.length < requiredLeadsCount) {
-            throw new Error(`INSUFFICIENT_DATA: We do not have enough fresh leads for ${item.package.brand}. Required: ${requiredLeadsCount}, Available: ${freshLeads.length}`);
+            throw new Error(`INSUFFICIENT_DATA: Available: ${freshLeads.length}. Required: ${requiredLeadsCount}`);
           }
 
-          // D. Create the UnlockedLead records binding the data to this workspace
           const unlockData = freshLeads.map(lead => ({
             workspaceId,
             leadId: lead.id,
@@ -123,10 +120,8 @@ export const CheckoutService = {
           totalLeadsUnlocked += freshLeads.length;
         }
 
-        // 7. Clear Cart
         await tx.cartItem.deleteMany({ where: { userId } });
 
-        // 8. Audit Logging
         await tx.activityLog.create({
           data: {
             action: 'PAYMENT_CONFIRMED',
@@ -148,76 +143,30 @@ export const CheckoutService = {
         };
       });
 
-      // ==========================================
-      // 🟢 POST-TRANSACTION SUCCESS ACTIONS
-      // ==========================================
-
+      // --- POST-TRANSACTION SUCCESS ---
       if (!result.isDuplicate && result.invoice) {
-        
-        // 1. Fire Real-Time In-App Notification 👈 NEW
-        const successNotificationPromise = NotificationService?.sendToUser?.(userId, {
+        NotificationService?.sendToUser?.(userId, {
           title: 'Purchase Successful! 🎉',
-          message: `Successfully unlocked ${result.receiptData.totalLeadsUnlocked} premium business leads. Invoice ${result.invoice.id} generated.`,
+          message: `Successfully unlocked ${result.receiptData.totalLeadsUnlocked} premium leads.`,
           type: 'SUCCESS',
-          link: '/dashboard/history' // Adjust path to where users view invoices/leads
+          link: '/dashboard/history'
         });
-        if (successNotificationPromise?.catch) {
-          successNotificationPromise.catch((err: any) => console.error('[NOTIFICATION SEND ERROR]', err));
-        }
 
-        // 2. Trigger Success Email
         if (targetEmail) {
           MailerService.send({
             to: targetEmail,
             templateName: 'order-success',
-            context: {
-              name: targetName,
-              invoiceId: result.invoice.id,
-              amount: stripeAmountPaid,
-              leadsUnlocked: result.receiptData.totalLeadsUnlocked
-            }
-          }).catch(err => console.error("Failed to send success email:", err));
+            context: { name: targetName, invoiceId: result.invoice.id, leadsUnlocked: result.receiptData.totalLeadsUnlocked }
+          }).catch(err => console.error(err));
         }
       }
-
       return result;
 
     } catch (error: any) {
-      
-      // ==========================================
-      // 🔴 TRANSACTION FAILURE ACTIONS
-      // ==========================================
-      
-      // Ignore empty cart errors (implies they already checked out or abandoned)
       if (!error.message.includes('Cart is empty')) {
-        
         const cleanErrorMessage = error.message.replace('ORDER_ABORTED: ', '').replace('INSUFFICIENT_DATA: ', '');
-
-        // 1. Fire Real-Time In-App Error Notification 👈 NEW
-        const failureNotificationPromise = NotificationService?.sendToUser?.(userId, {
-          title: 'Checkout Failed ❌',
-          message: cleanErrorMessage,
-          type: 'ERROR',
-          link: '/dashboard/cart'
-        });
-        if (failureNotificationPromise?.catch) {
-          failureNotificationPromise.catch((err: any) => console.error('[NOTIFICATION SEND ERROR]', err));
-        }
-
-        // 2. Trigger Failure Email
-        if (targetEmail) {
-          MailerService.send({
-            to: targetEmail,
-            templateName: 'order-failed',
-            context: {
-              name: targetName,
-              errorMessage: cleanErrorMessage
-            }
-          }).catch(err => console.error("Failed to send failure email:", err));
-        }
+        NotificationService?.sendToUser?.(userId, { title: 'Checkout Failed ❌', message: cleanErrorMessage, type: 'ERROR' });
       }
-
-      // Rethrow the error so the calling controller/webhook knows it failed
       throw error;
     }
   }

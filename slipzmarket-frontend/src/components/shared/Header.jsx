@@ -306,7 +306,14 @@ const Header = () => {
       {activeDropdown && <div className="fixed inset-0 z-40" onClick={closeDropdowns} />}
 
       <header className="relative z-50 flex h-18 w-full items-center justify-between border-b-0 bg-surface px-6 transition-colors lg:px-10">
-        <div className="flex shrink-0 items-center gap-4">
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -left-8 top-0 h-40 w-40 rounded-full border border-accent/15 bg-accent/5 blur-2xl" />
+          <div className="absolute right-0 top-4 h-32 w-32 rounded-full border border-primary/10 bg-primary/5 blur-2xl" />
+          <div className="absolute left-10 top-1/2 h-3 w-72 -translate-y-1/2 rounded-full bg-gradient-to-r from-accent/20 via-accent/10 to-transparent opacity-80" />
+          <div className="absolute right-10 bottom-4 h-2 w-64 rounded-full bg-gradient-to-l from-accent/20 via-accent/10 to-transparent opacity-80" />
+        </div>
+
+        <div className="relative flex shrink-0 items-center gap-4">
           <button type="button" className="flex items-center gap-2" onClick={() => navigate(isAdmin ? '/admin' : '/dashboard')}>
             <Asterisk size={36} strokeWidth={2.5} className="text-muted" />
             <span className="hidden text-2xl font-bold tracking-tight text-primary sm:block">SlipZMarket</span>

@@ -1,12 +1,15 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../utils/api';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import {
   Plus, Minus, ShieldCheck, CreditCard,
-  Lock, FileText, X, Mail, Phone, Building2, CheckCircle2, AlertCircle, Download, ArrowRight, Loader2, Wallet
+  Lock, FileText, X, Mail, Phone, Building2, CheckCircle2, AlertCircle, Download, ArrowRight, Loader2, Wallet, LogIn
 } from 'lucide-react';
+import { 
+  getLocalCart, setLocalCart, removeFromLocalCart, clearLocalCart, hasPendingSync, clearPendingSync, markPendingSync 
+} from '../../utils/sessionCart';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || 'pk_test_yourKeyHere');
 
@@ -46,7 +49,7 @@ const CheckoutFormWrapper = ({ total, cartItems, billingDetails, isProcessing, s
       if (result.error) {
         showNotification(result.error.message, 'error');
         setIsProcessing(false);
-      } else if (result.paymentIntent.status === 'succeeded') {
+      } else if (result.paymentIntent?.status === 'succeeded') {
         const finalizeRes = await axios.post(`${API_URL}/checkout/finalize`, {
           intentId: result.paymentIntent.id,
           billingDetails: billingDetails
@@ -54,6 +57,9 @@ const CheckoutFormWrapper = ({ total, cartItems, billingDetails, isProcessing, s
 
         const invoiceData = finalizeRes.data.data?.invoice || finalizeRes.data.invoice;
         onSuccess({ ...invoiceData, amountPaid: total, email: billingDetails.email });
+      } else {
+        showNotification('Payment could not be completed. Please try again.', 'error');
+        setIsProcessing(false);
       }
     } catch (err) {
       console.error(err);
@@ -96,14 +102,14 @@ const CheckoutFormWrapper = ({ total, cartItems, billingDetails, isProcessing, s
       <button
         type="submit"
         disabled={isProcessing || cartItems.length === 0 || !stripe || !isBillingComplete}
-        className="w-full bg-[#800000] hover:bg-[#660000] text-white py-4 rounded-lg text-[15px] font-bold transition-all duration-200 flex justify-center items-center gap-2 disabled:opacity-60 disabled:hover:bg-[#800000] shadow-md hover:shadow-lg disabled:shadow-none"
+        className="w-full bg-[#800000] hover:bg-[#660000] text-white py-3 rounded-lg text-[12px] font-bold transition-all duration-200 flex justify-center items-center gap-2 disabled:opacity-60 disabled:hover:bg-[#800000] shadow-md hover:shadow-lg disabled:shadow-none"
       >
         {isProcessing ? (
           <span className="flex items-center gap-2">
             <Loader2 size={18} className="animate-spin text-white" /> Authorizing...
           </span>
         ) : !isBillingComplete ? (
-          <span className="flex items-center gap-2 opacity-90 text-[14px]">Please fill Billing Details</span>
+          <span className="flex items-center gap-2 opacity-90 text-[11px]">Please fill Billing Details</span>
         ) : (
           <span className="flex items-center gap-2">
             <Lock size={18} /> Pay £{total.toFixed(2)} securely
@@ -138,9 +144,9 @@ const Cart = () => {
   
   const notificationTimerRef = useRef(null);
 
-  const getAuthConfig = () => ({
+  const getAuthConfig = useCallback(() => ({
     headers: { Authorization: `Bearer ${localStorage.getItem('slipz_token')}` }
-  });
+  }), []);
 
   const showNotification = (message, type = 'success') => {
     setNotification({ visible: true, message, type });
@@ -151,27 +157,129 @@ const Cart = () => {
     }, 4000);
   };
 
-  const getCartItems = useCallback(async () => {
-    const res = await axios.get(`${API_URL}/cart`, getAuthConfig());
-    return res.data.items || res.data.data?.items || [];
+  useEffect(() => {
+    return () => {
+      if (notificationTimerRef.current) {
+        clearTimeout(notificationTimerRef.current);
+      }
+    };
   }, []);
 
   const fetchCartItems = useCallback(async () => {
+  setIsLoading(true);
+  const token = localStorage.getItem('slipz_token');
+  
+  try {
+    if (token) {
+      // If token exists, try fetching from API
+      try {
+        const res = await axios.get(`${API_URL}/cart`, getAuthConfig());
+        setCartItems(res.data.items || res.data.data?.items || []);
+      } catch (err) {
+        // If API fails (e.g., 401), it means the token is dead
+        if (err.response?.status === 401) {
+          localStorage.removeItem('slipz_token');
+          // Fallback to local cart instead of showing error
+          setCartItems(getLocalCart());
+        } else {
+          throw err;
+        }
+      }
+    } else {
+      // If no token, just load local
+      setCartItems(getLocalCart());
+    }
+  } catch (error) {
+    console.error('Failed to load cart', error);
+    showNotification('Unable to sync cart. Please refresh.', 'error');
+  } finally {
+    setIsLoading(false);
+  }
+}, [getAuthConfig]);
+
+  useEffect(() => {
+    const loadCart = async () => { await fetchCartItems(); };
+    loadCart();
+
+    // Keep cart in-sync when local cart changes elsewhere (other tabs/components)
+    const handleCartUpdate = () => { fetchCartItems(); };
+    const handleStorageChange = (e) => { if (e.key === 'slipz_local_cart' || !e.key) fetchCartItems(); };
+    window.addEventListener('cartUpdated', handleCartUpdate);
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('cartUpdated', handleCartUpdate);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [fetchCartItems]);
+
+  // Sync local cart to backend after login
+  useEffect(() => {
+    const syncLocalCart = async () => {
+      // Only attempt auto-sync when user is authenticated and a pending sync is flagged
+      const token = localStorage.getItem('slipz_token');
+      if (!token || !hasPendingSync()) return;
+
+      try {
+        const localCartItems = getLocalCart();
+        if (Array.isArray(localCartItems) && localCartItems.length > 0) {
+          // Sync each item to backend cart using packageId
+          await Promise.all(
+            localCartItems.map(item =>
+              axios.post(
+                `${API_URL}/cart/add`,
+                { packageId: item?.id },
+                getAuthConfig()
+              ).catch(err => console.error('Sync error for', item?.id, err))
+            )
+          );
+          // Clear local cart and sync flag
+          clearLocalCart();
+          clearPendingSync();
+          showNotification('✓ Your saved items have been added to cart!', 'success');
+          // Reload cart to show synced items
+          await fetchCartItems();
+        }
+      } catch (error) {
+        console.error('Failed to sync local cart:', error);
+        showNotification('Could not sync saved items. Please try refreshing the page.', 'error');
+      }
+    };
+    syncLocalCart();
+  }, [getAuthConfig, fetchCartItems]);
+
+  const manualSyncLocalCart = async () => {
+    const token = localStorage.getItem('slipz_token');
+    const local = getLocalCart();
+    if (!local || local.length === 0) {
+      showNotification('No saved local items to merge', 'info');
+      return;
+    }
+
+    if (!token) {
+      markPendingSync();
+      showNotification('Please login to complete merge. Redirecting...', 'info');
+      setTimeout(() => { window.location.href = '/auth?redirect=/cart'; }, 800);
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const items = await getCartItems();
-      setCartItems(items);
-    } catch (error) {
-      console.error('Failed to load cart', error);
-      showNotification('Unable to sync cart. Please refresh the page.', 'error');
+      await Promise.all(
+        local.map(i => axios.post(`${API_URL}/cart/add`, { packageId: i.id }, getAuthConfig()).catch(err => { console.error('sync item', i.id, err); }))
+      );
+      clearLocalCart();
+      clearPendingSync();
+      showNotification('✓ Saved items merged into your cart', 'success');
+      await fetchCartItems();
+      window.dispatchEvent(new Event('cartUpdated'));
+    } catch (err) {
+      console.error('Manual sync failed', err);
+      showNotification('Could not merge saved items. Try again later.', 'error');
     } finally {
       setIsLoading(false);
     }
-  }, [getCartItems]);
-
-  useEffect(() => {
-    fetchCartItems();
-  }, [fetchCartItems]);
+  };
 
   // Fetch billing prefill data & workspace balance from backend on mount
   useEffect(() => {
@@ -192,25 +300,48 @@ const Cart = () => {
           setWorkspaceBalance(parseFloat(workspaceData.balance || 0));
         }
 
-      } catch (err) {
-        console.warn('Could not fetch account data', err?.message || err);
+      } catch (_err) {
+        console.warn('Could not fetch account data', _err?.message || _err);
       }
     };
     fetchAccountData();
-  }, []);
+  }, [getAuthConfig]);
 
-  const subtotal = cartItems.reduce((acc, item) => {
-    const price = Number(item.package?.price || 0);
-    return acc + price * item.quantity;
-  }, 0);
+  const cartCount = useMemo(
+    () => cartItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0),
+    [cartItems]
+  );
+
+  const subtotal = useMemo(
+    () => cartItems.reduce((acc, item) => {
+      const price = Number(item.package?.price || 0);
+      const quantity = Math.max(1, Number(item.quantity) || 1);
+      return acc + price * quantity;
+    }, 0),
+    [cartItems]
+  );
+
   const processingFee = 0.0;
-  const total = subtotal > 0 ? subtotal + processingFee : 0;
+  const total = useMemo(() => Math.max(0, subtotal + processingFee), [subtotal]);
 
   const updateQty = async (id, delta) => {
     const existing = cartItems.find((item) => item.id === id);
     if (!existing) return;
-    const newQty = Math.max(1, existing.quantity + delta);
-    if (newQty === existing.quantity) return;
+    const currentQty = Math.max(1, Number(existing.quantity) || 1);
+    const newQty = Math.max(1, currentQty + delta);
+    if (newQty === currentQty) return;
+
+    const token = localStorage.getItem('slipz_token');
+    if (!token) {
+      // Update local cart
+      const local = getLocalCart();
+      const updated = local.map(i => i.id === id ? { ...i, quantity: newQty } : i);
+      setLocalCart(updated);
+      setCartItems(updated.map(i => ({ id: i.id, package: i.package, quantity: i.quantity })));
+      window.dispatchEvent(new Event('cartUpdated'));
+      showNotification('Cart updated');
+      return;
+    }
 
     try {
       await axios.patch(`${API_URL}/cart/${id}`, { quantity: newQty }, getAuthConfig());
@@ -223,6 +354,15 @@ const Cart = () => {
   };
 
   const removeItem = async (id) => {
+    const token = localStorage.getItem('slipz_token');
+    if (!token) {
+      const updated = removeFromLocalCart(id);
+      setCartItems(updated.map(i => ({ id: i.id, package: i.package, quantity: i.quantity })));
+      window.dispatchEvent(new Event('cartUpdated'));
+      showNotification('Item removed');
+      return;
+    }
+
     try {
       await axios.delete(`${API_URL}/cart/${id}`, getAuthConfig());
       setCartItems((items) => items.filter((item) => item.id !== id));
@@ -234,6 +374,15 @@ const Cart = () => {
   };
 
   const clearCart = async () => {
+    const token = localStorage.getItem('slipz_token');
+    if (!token) {
+      clearLocalCart();
+      setCartItems([]);
+      window.dispatchEvent(new Event('cartUpdated'));
+      showNotification('Cart cleared successfully');
+      return;
+    }
+
     try {
       await axios.delete(`${API_URL}/cart`, getAuthConfig());
       setCartItems([]);
@@ -273,7 +422,8 @@ const Cart = () => {
       handlePaymentSuccess({ ...invoiceData, amountPaid: total, email: billingDetails.email });
     } catch (err) {
       console.error(err);
-      setTimeout(() => handlePaymentSuccess({ id: `INV-WIRE-${Date.now()}`, amountPaid: total, email: billingDetails.email }), 1500);
+      setIsProcessing(false);
+      showNotification('Could not create invoice request. Please try again.', 'error');
     }
   };
 
@@ -312,7 +462,7 @@ const Cart = () => {
       document.body.appendChild(link);
       link.click();
       link.parentNode.removeChild(link);
-    } catch (err) {
+    } catch {
       showNotification('Failed to download receipt.', 'error');
     } finally {
       setIsDownloading(false);
@@ -337,17 +487,17 @@ const Cart = () => {
             <CheckCircle2 size={32} />
           </div>
           
-          <h2 className="text-2xl font-black text-[#2a1b1b] tracking-tight">Payment Verified</h2>
-          <p className="text-[#7a6b6b] text-[15px] mt-3 leading-relaxed">
+          <h2 className="text-xl font-black text-[#2a1b1b] tracking-tight">Payment Verified</h2>
+          <p className="text-[#7a6b6b] text-[12px] mt-3 leading-relaxed">
             Your transaction was successful. We've sent a confirmation email to <strong className="text-[#2a1b1b]">{successData.email}</strong>.
           </p>
 
           <div className="bg-[#fcfbfb] border border-[#e8e2e2] rounded-xl p-5 mt-8 text-left space-y-3 shadow-inner">
-            <div className="flex justify-between items-center border-b border-[#e8e2e2] pb-3 text-[14px]">
+            <div className="flex justify-between items-center border-b border-[#e8e2e2] pb-3 text-[12px]">
               <span className="text-[#7a6b6b] font-medium">Reference ID</span>
               <span className="font-mono font-bold text-[#2a1b1b] bg-white px-2 py-1 border border-[#e8e2e2] rounded">{successData.id}</span>
             </div>
-            <div className="flex justify-between items-center text-[15px]">
+            <div className="flex justify-between items-center text-[13px]">
               <span className="text-[#7a6b6b] font-medium">Total Paid</span>
               <span className="font-black text-[#800000]">£{successData.amountPaid?.toFixed(2) || '0.00'}</span>
             </div>
@@ -357,14 +507,14 @@ const Cart = () => {
             <button 
               onClick={handleDownloadReceipt}
               disabled={isDownloading}
-              className="flex-1 bg-white border-2 border-[#e8e2e2] hover:border-[#800000] text-[#2a1b1b] py-3.5 rounded-lg text-[14px] font-bold transition-all flex items-center justify-center gap-2"
+              className="flex-1 bg-white border-2 border-[#e8e2e2] hover:border-[#800000] text-[#2a1b1b] py-3 rounded-lg text-[12px] font-bold transition-all flex items-center justify-center gap-2"
             >
               {isDownloading ? <Loader2 size={18} className="animate-spin text-[#800000]" /> : <Download size={18} className="text-[#800000]" />}
               Download Receipt
             </button>
             <button 
               onClick={() => window.location.href = '/dashboard'}
-              className="flex-1 bg-[#800000] hover:bg-[#660000] text-white py-3.5 rounded-lg text-[14px] font-bold transition-all shadow-md flex items-center justify-center gap-2"
+              className="flex-1 bg-[#800000] hover:bg-[#660000] text-white py-3 rounded-lg text-[12px] font-bold transition-all shadow-md flex items-center justify-center gap-2"
             >
               Access Data <ArrowRight size={18} />
             </button>
@@ -375,14 +525,37 @@ const Cart = () => {
   }
 
 
-  // --- 2. NORMAL CART VIEW (Before payment) ---
+  // Check if guest has items in cart (should prompt login)
+  const token = localStorage.getItem('slipz_token');
+  const isGuest = !token;
+  const hasLocalItems = getLocalCart().length > 0;
+  const shouldPromptLogin = isGuest && hasLocalItems;
+
   return (
-    <div className="flex flex-col h-full min-h-screen bg-[#f9fafb] font-sans pb-16 selection:bg-[#800000] selection:text-white relative">
-      
+    <div className="flex flex-col h-full min-h-screen bg-surface font-sans pb-12 text-[11px] selection:bg-accent selection:text-surface relative">
+{shouldPromptLogin && (
+        <div className="bg-gradient-to-r from-accent/10 to-surface-soft border-b border-accent/20 px-4 lg:px-8 py-4">
+          <div className="w-full max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <ShieldCheck size={20} className="text-accent mt-0.5 shrink-0" />
+              <div>
+                <p className="text-[13px] font-bold text-primary">Your saved items are ready</p>
+                <p className="text-[12px] text-muted mt-1">Sign in to complete your purchase and access your data.</p>
+              </div>
+            </div>
+            <button
+              onClick={() => window.location.href = '/auth?redirect=/cart'}
+              className="shrink-0 bg-accent hover:bg-accent-hover text-surface px-6 py-2 rounded-xl text-[12px] font-bold transition-all shadow-md flex items-center gap-2"
+            >
+              <LogIn size={16} /> Sign In Now
+            </button>
+          </div>
+        </div>)}
+
       {/* Friendly Notification System */}
       {notification.visible && (
         <div className="fixed right-6 top-24 z-50 max-w-sm animate-in fade-in slide-in-from-top-5">
-          <div className={`rounded-xl px-5 py-4 shadow-xl flex items-start gap-3 border ${
+          <div className={`rounded-xl px-4 py-3 shadow-xl flex items-start gap-3 border ${
             notification.type === 'error' ? 'bg-white border-red-200 text-red-800' : 'bg-emerald-600 border-emerald-700 text-white'
           }`}>
             {notification.type === 'error' ? (
@@ -404,22 +577,22 @@ const Cart = () => {
       {showInvoiceModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95">
-            <h3 className="text-xl font-bold text-[#2a1b1b]">Confirm Invoice Request</h3>
-            <p className="text-[14px] text-[#7a6b6b] mt-2">
+            <h3 className="text-lg font-bold text-[#2a1b1b]">Confirm Invoice Request</h3>
+            <p className="text-[12px] text-[#7a6b6b] mt-2">
               Generate a formal invoice for <strong className="text-[#2a1b1b]">£{total.toFixed(2)}</strong>. Datasets will unlock automatically once your Wire Transfer clears.
             </p>
             <div className="mt-6 flex items-center justify-end gap-3">
               <button 
                 onClick={() => setShowInvoiceModal(false)}
                 disabled={isProcessing}
-                className="px-4 py-2 text-[14px] font-bold text-[#7a6b6b] hover:bg-[#f5f2f2] rounded-lg transition-all"
+                className="px-4 py-2 text-[12px] font-bold text-[#7a6b6b] hover:bg-[#f5f2f2] rounded-lg transition-all"
               >
                 Cancel
               </button>
               <button 
                 onClick={confirmInvoiceCheckout}
                 disabled={isProcessing}
-                className="px-6 py-2 bg-[#800000] hover:bg-[#660000] text-white text-[14px] font-bold rounded-lg transition-all flex items-center gap-2"
+                className="px-6 py-2 bg-[#800000] hover:bg-[#660000] text-white text-[12px] font-bold rounded-lg transition-all flex items-center gap-2"
               >
                 {isProcessing ? <Loader2 size={16} className="animate-spin text-white" /> : null}
                 {isProcessing ? 'Generating...' : 'Confirm Request'}
@@ -429,26 +602,47 @@ const Cart = () => {
         </div>
       )}
 
-      <div className="bg-white border-b border-[#d8cdcd] px-4 lg:px-8 py-8">
-        <div className="w-full max-w-[1200px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+{/* Dynamic Compact Header with Technical Grid Accents */}
+      <div className="relative bg-white border-b border-theme px-4 lg:px-8 py-4 overflow-hidden">
+        {/* Subtle sexy background lines */}
+        <div 
+          className="absolute inset-0 opacity-[0.03] pointer-events-none" 
+          style={{
+            backgroundImage: `
+              linear-gradient(to right, var(--accent) 1px, transparent 1px),
+              linear-gradient(to bottom, var(--accent) 1px, transparent 1px)`,
+            backgroundSize: '28px 28px',
+          }}
+        />
+        <div className="relative w-full max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-[#2a1b1b]">Secure Checkout</h1>
-            <p className="text-[14px] text-[#7a6b6b] mt-1">Review your packages and complete your transaction.</p>
+            <h1 className="text-lg font-bold tracking-tight text-[#2a1b1b] flex items-center gap-2">
+              Secure Checkout
+            </h1>
+            <p className="text-[12px] text-[#7a6b6b] mt-0.5">Review your packages and complete transaction.</p>
           </div>
-          <div className="flex items-center gap-2 text-[12px] font-bold text-[#7a6b6b] uppercase tracking-widest bg-[#f5f2f2] px-3 py-1.5 rounded-md border border-[#e8e2e2]">
-            <Lock size={14} /> 256-bit Encrypted
+          <div className="self-start md:self-auto flex items-center gap-1.5 text-[10px] font-bold text-muted uppercase tracking-wider bg-surface-soft border border-theme px-2.5 py-1 rounded-md shadow-sm">
+            <Lock size={12} className="text-accent" /> 256-bit Encrypted
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 px-4 lg:px-8 mt-8 w-full max-w-[1200px] mx-auto items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 px-4 lg:px-8 mt-8 w-full max-w-7xl mx-auto items-start">
         <div className="lg:col-span-7 flex flex-col gap-8">
           
           {/* Cart UI */}
-          <div className="bg-white border border-[#d8cdcd] rounded-xl shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-[#e8e2e2] bg-[#fcfbfb] flex items-center justify-between">
-              <h2 className="text-[15px] font-bold text-[#2a1b1b]">Order Summary</h2>
-              {cartItems.length > 0 && (
+              <div className="bg-surface border border-theme rounded-xl shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-theme bg-surface-soft flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <h2 className="text-[13px] font-bold text-[#2a1b1b]">Order Summary{cartCount > 0 ? ` (${cartCount})` : ''}</h2>
+                {/* Show merge button when local saved items exist */}
+                {getLocalCart().length > 0 && (
+                  <button onClick={manualSyncLocalCart} disabled={isLoading} className="text-[11px] font-bold text-[#2a1b1b] bg-white border border-[#e8e2e2] px-2 py-1 rounded-md hover:shadow-sm transition-all">
+                    Merge Saved
+                  </button>
+                )}
+              </div>
+              {cartCount > 0 && (
                 <button onClick={clearCart} className="text-[12px] font-bold text-[#7a6b6b] hover:text-[#800000] transition-colors">
                   Empty Cart
                 </button>
@@ -456,28 +650,32 @@ const Cart = () => {
             </div>
 
             {isLoading ? (
-              <div className="p-12 text-center text-[#7a6b6b] text-[14px] flex flex-col items-center gap-3">
-                <Loader2 className="animate-spin text-[#800000]" size={24} />
+              <div className="p-10 text-center text-[#7a6b6b] text-[12px] flex flex-col items-center gap-3">
+                <Loader2 className="animate-spin text-[#800000]" size={20} />
                 Loading secure cart...
               </div>
-            ) : cartItems.length === 0 ? (
-              <div className="p-12 text-center text-[#7a6b6b] text-[14px]">Your workspace cart is empty.</div>
+            ) : cartCount === 0 && !hasLocalItems ? (
+              <div className="p-10 text-center text-[#7a6b6b] text-[12px]">
+                <p className="mb-3">Your workspace cart is empty.</p>
+                <a href="/browse" className="text-[#800000] font-bold hover:underline">Continue shopping →</a>
+              </div>
             ) : (
               <div className="flex flex-col">
                 {cartItems.map((item) => {
                   const packageData = item.package || {};
+                  const quantity = Math.max(1, Number(item.quantity) || 1);
                   const price = Number(packageData.price || 0);
-                  const itemTotal = price * item.quantity;
+                  const itemTotal = price * quantity;
 
                   return (
-                    <div key={item.id} className="p-6 border-b border-[#e8e2e2] last:border-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group">
-                      <div className="flex items-start gap-4 flex-1">
+                    <div key={item.id} className="p-4 border-b border-[#e8e2e2] last:border-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group">
+                      <div className="flex items-start gap-3 flex-1">
                         <div className="mt-1 text-[#800000]">
-                          {packageData.category === 'Email Leads' ? <Mail size={18} /> : <Phone size={18} />}
+                          {packageData.category === 'Email Leads' ? <Mail size={14} /> : <Phone size={14} />}
                         </div>
                         <div>
-                          <h4 className="text-[14px] font-bold text-[#2a1b1b]">{packageData.brand}</h4>
-                          <span className="text-[12px] text-[#7a6b6b]">{packageData.category || 'Lead Package'}</span>
+                          <h4 className="text-[12px] font-bold text-[#2a1b1b]">{packageData.brand}</h4>
+                          <span className="text-[10px] text-[#7a6b6b]">{packageData.category || 'Lead Package'}</span>
                         </div>
                       </div>
 
@@ -487,9 +685,9 @@ const Cart = () => {
                           <span className="w-10 text-center text-[13px] font-bold text-[#2a1b1b]">{item.quantity}</span>
                           <button onClick={() => updateQty(item.id, 1)} className="w-8 h-8 flex items-center justify-center text-[#7a6b6b] hover:text-[#2a1b1b] border-l border-[#d8cdcd]"><Plus size={14} /></button>
                         </div>
-                        <div className="flex items-center gap-4 min-w-20 justify-end">
-                          <span className="text-[15px] font-bold text-[#2a1b1b]">£{itemTotal.toFixed(2)}</span>
-                          <button onClick={() => removeItem(item.id)} className="text-[#a09393] hover:text-[#800000] transition-colors"><X size={16} /></button>
+                        <div className="flex items-center gap-3 min-w-20 justify-end">
+                          <span className="text-[13px] font-bold text-primary">£{itemTotal.toFixed(2)}</span>
+                          <button onClick={() => removeItem(item.id)} className="text-[#a09393] hover:text-[#800000] transition-colors"><X size={14} /></button>
                         </div>
                       </div>
                     </div>
@@ -498,12 +696,15 @@ const Cart = () => {
               </div>
             )}
 
-            {cartItems.length > 0 && (
-              <div className="bg-[#fcfbfb] p-6 border-t border-[#e8e2e2] flex justify-end">
-                <div className="w-full sm:w-64 space-y-2">
-                  <div className="flex justify-between text-[13px] text-[#7a6b6b]"><span>Subtotal</span><span className="font-medium text-[#2a1b1b]">£{subtotal.toFixed(2)}</span></div>
-                  <div className="flex justify-between text-[13px] text-[#7a6b6b]"><span>Processing Fee</span><span className="font-medium text-[#2a1b1b]">£{processingFee.toFixed(2)}</span></div>
-                  <div className="border-t border-[#d8cdcd] pt-2 mt-2 flex justify-between text-[16px] font-black text-[#2a1b1b]"><span>Total</span><span>£{total.toFixed(2)}</span></div>
+            {cartCount > 0 && (
+              <div className="bg-[#fcfbfb] p-4 border-t border-[#e8e2e2] flex justify-end">
+                <div className="w-full sm:w-56 space-y-2">
+                  <div className="flex justify-between text-[11px] text-[#7a6b6b]"><span>Subtotal</span><span className="font-medium text-[#2a1b1b]">£{subtotal.toFixed(2)}</span></div>
+                  <div className="flex justify-between text-[11px] text-[#7a6b6b]"><span>Processing Fee</span><span className="font-medium text-[#2a1b1b]">£{processingFee.toFixed(2)}</span></div>
+                  <div className="border-t border-[#d8cdcd] pt-2 mt-2 flex justify-between text-[13px] font-black text-[#2a1b1b]"><span>Total</span><span>£{total.toFixed(2)}</span></div>
+                  {shouldPromptLogin && (
+                    <p className="text-[10px] text-[#7a6b6b] italic mt-3 pt-3 border-t border-[#d8cdcd]">Sign in above to proceed with checkout</p>
+                  )}
                 </div>
               </div>
             )}
@@ -511,8 +712,8 @@ const Cart = () => {
 
           {/* Billing Form */}
           <div className="bg-white border border-[#d8cdcd] rounded-xl shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-[#e8e2e2] bg-[#fcfbfb] flex items-center justify-between">
-              <h2 className="text-[15px] font-bold text-[#2a1b1b]">Billing Details</h2>
+            <div className="px-4 py-3 border-b border-[#e8e2e2] bg-[#fcfbfb] flex items-center justify-between">
+              <h2 className="text-[13px] font-bold text-[#2a1b1b]">Billing Details</h2>
               <div className="flex items-center gap-3">
                 <label className="text-[12px] text-[#7a6b6b] flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={saveBillingToProfile} onChange={(e) => { setSaveBillingToProfile(e.target.checked); if (e.target.checked) saveBillingProfile(); }} className="w-4 h-4 cursor-pointer" />
@@ -527,64 +728,85 @@ const Cart = () => {
                 <label className="text-[12px] font-bold text-[#2a1b1b]">Company Name</label>
                 <div className="relative">
                   <Building2 size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a09393]" />
-                  <input type="text" name="companyName" value={billingDetails.companyName} onChange={(e) => { handleInputChange(e); setSavedBilling(false); }} placeholder="Acme Corp" className="w-full pl-9 pr-4 py-2.5 border border-[#d8cdcd] rounded-md text-[14px] outline-none focus:border-[#800000] focus:ring-1 transition-all" />
+                  <input type="text" name="companyName" value={billingDetails.companyName} onChange={(e) => { handleInputChange(e); setSavedBilling(false); }} placeholder="Acme Corp" className="w-full pl-9 pr-4 py-2 border border-[#d8cdcd] rounded-md text-[12px] outline-none focus:border-[#800000] focus:ring-1 transition-all" />
                 </div>
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-[12px] font-bold text-[#2a1b1b]">First Name</label>
-                <input type="text" name="firstName" value={billingDetails.firstName} onChange={(e) => { handleInputChange(e); setSavedBilling(false); }} placeholder="Alex" className="w-full px-3 py-2.5 border border-[#d8cdcd] rounded-md text-[14px] outline-none focus:border-[#800000] focus:ring-1 transition-all" />
+                <input type="text" name="firstName" value={billingDetails.firstName} onChange={(e) => { handleInputChange(e); setSavedBilling(false); }} placeholder="Alex" className="w-full px-3 py-2 border border-[#d8cdcd] rounded-md text-[12px] outline-none focus:border-[#800000] focus:ring-1 transition-all" />
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-[12px] font-bold text-[#2a1b1b]">Last Name</label>
-                <input type="text" name="lastName" value={billingDetails.lastName} onChange={(e) => { handleInputChange(e); setSavedBilling(false); }} placeholder="Doe" className="w-full px-3 py-2.5 border border-[#d8cdcd] rounded-md text-[14px] outline-none focus:border-[#800000] focus:ring-1 transition-all" />
+                <input type="text" name="lastName" value={billingDetails.lastName} onChange={(e) => { handleInputChange(e); setSavedBilling(false); }} placeholder="Doe" className="w-full px-3 py-2 border border-[#d8cdcd] rounded-md text-[12px] outline-none focus:border-[#800000] focus:ring-1 transition-all" />
               </div>
               <div className="flex flex-col gap-1.5 md:col-span-2">
                 <label className="text-[12px] font-bold text-[#2a1b1b]">Billing Email</label>
-                <input type="email" name="email" value={billingDetails.email} onChange={(e) => { handleInputChange(e); setSavedBilling(false); }} placeholder="billing@acmecorp.com" className="w-full px-3 py-2.5 border border-[#d8cdcd] rounded-md text-[14px] outline-none focus:border-[#800000] focus:ring-1 transition-all" />
+                <input type="email" name="email" value={billingDetails.email} onChange={(e) => { handleInputChange(e); setSavedBilling(false); }} placeholder="billing@acmecorp.com" className="w-full px-3 py-2 border border-[#d8cdcd] rounded-md text-[12px] outline-none focus:border-[#800000] focus:ring-1 transition-all" />
               </div>
             </form>
           </div>
         </div>
 
         <div className="lg:col-span-5 sticky top-8">
-          <div className="bg-white border border-[#d8cdcd] rounded-xl shadow-md p-6">
-            <h3 className="text-[15px] font-bold text-[#2a1b1b] mb-4">Payment Gateway</h3>
+<div className="bg-surface border border-theme rounded-xl shadow-md p-6">
+            <h3 className="text-[13px] font-bold text-primary mb-4">{shouldPromptLogin ? 'Login to Continue' : 'Payment Gateway'}</h3>
 
-            <div className="flex p-1 bg-[#f5f2f2] border border-[#d8cdcd] rounded-lg mb-6">
-              <button onClick={() => setPaymentMethod('balance')} className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[12px] sm:text-[13px] font-bold rounded-md transition-all ${paymentMethod === 'balance' ? 'bg-white shadow-sm border border-[#d8cdcd] text-[#2a1b1b]' : 'text-[#7a6b6b]'}`}><Wallet size={16} className={paymentMethod === 'balance' ? 'text-[#800000]' : ''} /> Balance</button>
-              <button onClick={() => setPaymentMethod('card')} className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[12px] sm:text-[13px] font-bold rounded-md transition-all ${paymentMethod === 'card' ? 'bg-white shadow-sm border border-[#d8cdcd] text-[#2a1b1b]' : 'text-[#7a6b6b]'}`}><CreditCard size={16} className={paymentMethod === 'card' ? 'text-[#800000]' : ''} /> Card</button>
-              <button onClick={() => setPaymentMethod('invoice')} className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[12px] sm:text-[13px] font-bold rounded-md transition-all ${paymentMethod === 'invoice' ? 'bg-white shadow-sm border border-[#d8cdcd] text-[#2a1b1b]' : 'text-[#7a6b6b]'}`}><FileText size={16} className={paymentMethod === 'invoice' ? 'text-[#800000]' : ''} /> Invoice</button>
-            </div>
+            {shouldPromptLogin ? (
+              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+                <div className="bg-surface-soft border-2 border-accent rounded-lg p-5 text-center space-y-4">
+                  <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto bg-accent/10">
+                    <LogIn size={24} className="text-accent" />
+                  </div>
+                  <div>
+                    <p className="text-[13px] font-bold text-[#2a1b1b]">Ready to Checkout?</p>
+                    <p className="text-[12px] text-[#7a6b6b] mt-2">You have {hasLocalItems} item{hasLocalItems > 1 ? 's' : ''} saved locally. Sign in to complete your purchase and unlock instant access to your data.</p>
+                  </div>
+                  <button
+                    onClick={() => window.location.href = '/auth?redirect=/cart'}
+                    className="w-full bg-accent hover:bg-accent-hover text-surface py-3 rounded-lg text-[12px] font-bold transition-all shadow-md flex items-center justify-center gap-2"
+                  >
+                    <LogIn size={18} /> Sign In to Your Account
+                  </button>
+                  <p className="text-[11px] text-[#7a6b6b]">Don't have an account? <a href="/auth?tab=register&redirect=/cart" className="text-[#800000] font-bold hover:underline">Create one now</a></p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex p-1 bg-[#f5f2f2] border border-[#d8cdcd] rounded-lg mb-6">
+                  <button onClick={() => setPaymentMethod('balance')} className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[12px] sm:text-[13px] font-bold rounded-md transition-all ${paymentMethod === 'balance' ? 'bg-surface shadow-sm border border-theme text-primary' : 'text-muted'}`}><Wallet size={16} className={paymentMethod === 'balance' ? 'text-accent' : ''} /> Balance</button>
+                  <button onClick={() => setPaymentMethod('card')} className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[12px] sm:text-[13px] font-bold rounded-md transition-all ${paymentMethod === 'card' ? 'bg-surface shadow-sm border border-theme text-primary' : 'text-muted'}`}><CreditCard size={16} className={paymentMethod === 'card' ? 'text-accent' : ''} /> Card</button>
+                  <button onClick={() => setPaymentMethod('invoice')} className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[12px] sm:text-[13px] font-bold rounded-md transition-all ${paymentMethod === 'invoice' ? 'bg-surface shadow-sm border border-theme text-primary' : 'text-muted'}`}><FileText size={16} className={paymentMethod === 'invoice' ? 'text-accent' : ''} /> Invoice</button>
+                </div>
 
             {paymentMethod === 'balance' && (
               <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
-                <div className="bg-[#fcfbfb] border border-[#e8e2e2] rounded-md p-4 text-[13px] text-[#2a1b1b]">
+                <div className="bg-surface-soft border border-theme rounded-md p-4 text-[11px] text-primary">
                   <div className="flex justify-between mb-2">
-                    <span className="text-[#7a6b6b]">Workspace Balance:</span> 
+                    <span className="text-muted">Workspace Balance:</span> 
                     <span className="font-bold">£{workspaceBalance.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between mb-3">
-                    <span className="text-[#7a6b6b]">Order Total:</span> 
-                    <span className="font-bold text-[#800000]">- £{total.toFixed(2)}</span>
+                    <span className="text-muted">Order Total:</span> 
+                    <span className="font-bold text-accent">- £{total.toFixed(2)}</span>
                   </div>
-                  <div className="border-t border-[#d8cdcd] pt-3 flex justify-between items-center">
+                  <div className="border-t border-theme pt-3 flex justify-between items-center">
                     <span className="font-bold">Remaining Balance:</span>
-                    <span className={`font-black text-[15px] ${workspaceBalance >= total ? 'text-emerald-600' : 'text-red-600'}`}>
+                    <span className={`font-black text-[13px] ${workspaceBalance >= total ? 'text-emerald-600' : 'text-accent'}`}>
                       £{(workspaceBalance - total).toFixed(2)}
                     </span>
                   </div>
                 </div>
 
                 {workspaceBalance < total ? (
-                  <div className="text-red-600 bg-red-50 border border-red-100 rounded-lg p-3 text-[13px] font-bold text-center flex items-center justify-center gap-2">
+                  <div className="text-red-600 bg-red-50 border border-red-100 rounded-lg p-3 text-[11px] font-bold text-center flex items-center justify-center gap-2">
                     <AlertCircle size={16} /> Insufficient funds. Please add funds to your workspace.
                   </div>
                 ) : (
                   <button
                     type="button"
                     onClick={handleBalanceCheckout}
-                    disabled={isProcessing || cartItems.length === 0 || !isBillingComplete}
-                    className="w-full bg-[#800000] hover:bg-[#660000] text-white py-4 rounded-lg text-[15px] font-bold transition-all flex justify-center items-center gap-2 disabled:opacity-50"
+                    disabled={isProcessing || cartCount === 0 || !isBillingComplete}
+                    className="w-full bg-[#800000] hover:bg-[#660000] text-white py-3 rounded-lg text-[12px] font-bold transition-all flex justify-center items-center gap-2 disabled:opacity-50"
                   >
                     {!isBillingComplete ? 'Please fill Billing Details' : (
                       isProcessing ? <><Loader2 size={18} className="animate-spin"/> Processing...</> : <><Wallet size={18} /> Pay £{total.toFixed(2)} with Balance</>
@@ -619,25 +841,28 @@ const Cart = () => {
                 <button
                   type="button"
                   onClick={() => setShowInvoiceModal(true)}
-                  disabled={isProcessing || cartItems.length === 0 || !isBillingComplete}
-                  className="w-full bg-[#800000] hover:bg-[#660000] text-white py-4 rounded-lg text-[15px] font-bold transition-all flex justify-center items-center gap-2 disabled:opacity-50"
+                  disabled={isProcessing || cartCount === 0 || !isBillingComplete}
+                  className="w-full bg-accent hover:bg-accent-hover text-surface py-3 rounded-lg text-[12px] font-bold transition-all flex justify-center items-center gap-2 disabled:opacity-50"
                 >
                   {!isBillingComplete ? 'Please fill Billing Details' : 'Request Invoice Payment'}
                 </button>
               </div>
             )}
 
-            <div className="mt-6 pt-5 border-t border-[#e8e2e2] flex items-start gap-3">
-              <ShieldCheck size={18} className="text-[#800000] shrink-0 mt-0.5" />
-              <p className="text-[11px] text-[#7a6b6b] leading-relaxed">
+                  <div className="mt-6 pt-5 border-t border-theme flex items-start gap-3">
+              <ShieldCheck size={18} className="text-accent shrink-0 mt-0.5" />
+              <p className="text-[11px] text-muted leading-relaxed">
                 Protected by industry-standard encryption. By completing this purchase, you agree to SlipZMarket's Terms of Service and GDPR/CCPA data regulations.
               </p>
             </div>
-          </div>
+          </>
+        )}
         </div>
       </div>
     </div>
+  </div>
   );
 };
 
 export default Cart;
+

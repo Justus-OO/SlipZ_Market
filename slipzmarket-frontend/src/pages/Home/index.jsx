@@ -9,6 +9,7 @@ import {
 const Home = () => {
   const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [searchQuery, setSearchQuery] = useState(''); // <-- Added state for search
 
   // Check if the user is already logged in when they hit the landing page
   useEffect(() => {
@@ -18,11 +19,23 @@ const Home = () => {
     }
   }, []);
 
-  const handleCTA = () => {
+  // CTA for Authentication/Dashboard
+  const handleAuthCTA = () => {
     if (isAuthenticated) {
       navigate('/dashboard');
     } else {
       navigate('/auth');
+    }
+  };
+
+  // CTA for Public Browsing
+  const handleSearch = () => {
+    if (searchQuery.trim()) {
+      // Pass the query as a URL parameter so the browse page can read it
+      navigate(`/browse?query=${encodeURIComponent(searchQuery)}`);
+    } else {
+      // Just go to the default browse page if input is empty
+      navigate('/browse');
     }
   };
 
@@ -39,7 +52,7 @@ const Home = () => {
         </div>
         
         <div className="hidden md:flex items-center gap-8">
-          <button className="text-[14px] font-bold text-primary hover:text-muted transition-colors flex items-center gap-1">
+          <button onClick={() => navigate('/browse')} className="text-[14px] font-bold text-primary hover:text-muted transition-colors flex items-center gap-1">
             Platform <ChevronDownIcon />
           </button>
           <button className="text-[14px] font-bold text-primary hover:text-muted transition-colors">
@@ -53,7 +66,7 @@ const Home = () => {
         <div className="flex items-center gap-4">
           {isAuthenticated ? (
             <button 
-              onClick={handleCTA}
+              onClick={handleAuthCTA}
               className="bg-accent hover:bg-accent px-5 py-2.5 rounded-lg text-surface font-bold shadow-md transition-all flex items-center gap-2"
             >
               <LayoutDashboard size={14} /> Go to Dashboard
@@ -93,22 +106,24 @@ const Home = () => {
           Access a living database of over 275M+ contacts and 73M+ companies. Build highly targeted lists and engage them directly.
         </p>
 
-        {/* Search Input Demo */}
+        {/* --- INTERACTIVE SEARCH INPUT --- */}
         <div className="w-full max-w-3xl bg-surface p-2 rounded-2xl border border-theme shadow-xl flex flex-col sm:flex-row items-center gap-2 mb-8 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20 transition-all">
           <div className="flex-1 flex items-center gap-3 px-4 w-full h-12 sm:h-auto">
             <Search size={20} className="text-muted shrink-0" />
             <input 
               type="text" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="E.g., VP of Sales at Software companies in the US..." 
               className="w-full text-[15px] text-primary font-medium outline-none placeholder:text-muted bg-transparent"
-              disabled
             />
           </div>
           <button 
-            onClick={handleCTA}
-            className="w-full sm:w-auto bg-accent hover:bg-accent text-surface px-8 py-3.5 rounded-xl text-[15px] font-bold shadow-sm transition-colors shrink-0"
+            onClick={handleSearch}
+            className="w-full sm:w-auto bg-accent hover:bg-accent text-surface px-8 py-3.5 rounded-xl text-[15px] font-bold shadow-sm transition-colors shrink-0 flex items-center justify-center gap-2"
           >
-            {isAuthenticated ? 'Go to Platform' : 'Search Free'}
+            <Search size={16} /> Browse Publicly
           </button>
         </div>
 
@@ -165,7 +180,8 @@ const Home = () => {
               <p className="text-[15px] text-muted font-medium leading-relaxed mb-6">
                 Use 65+ data attributes to filter by industry, funding, technology used, and job titles to build the ultimate ICP list.
               </p>
-              <button className="text-[14px] font-bold text-muted hover:text-primary flex items-center gap-1 transition-colors">
+              {/* --- ROUTED TO PUBLIC BROWSE --- */}
+              <button onClick={() => navigate('/browse')} className="text-[14px] font-bold text-accent hover:text-accent-hover flex items-center gap-1 transition-colors">
                 Explore B2B Data <ArrowRight size={16} />
               </button>
             </div>
@@ -178,7 +194,7 @@ const Home = () => {
               <p className="text-[15px] text-muted font-medium leading-relaxed mb-6">
                 Automate your outreach with multi-channel sequences. Send highly personalized emails and dial directly from the platform.
               </p>
-              <button className="text-[14px] font-bold text-muted hover:text-primary flex items-center gap-1 transition-colors">
+              <button onClick={() => navigate('/browse')} className="text-[14px] font-bold text-accent hover:text-accent-hover flex items-center gap-1 transition-colors">
                 View Engagement Tools <ArrowRight size={16} />
               </button>
             </div>
@@ -191,7 +207,7 @@ const Home = () => {
               <p className="text-[15px] text-muted font-medium leading-relaxed mb-6">
                 Track open rates, meeting conversions, and team performance. Sync everything bi-directionally with Salesforce or HubSpot.
               </p>
-              <button className="text-[14px] font-bold text-muted hover:text-primary flex items-center gap-1 transition-colors">
+              <button onClick={() => navigate('/browse')} className="text-[14px] font-bold text-accent hover:text-accent-hover flex items-center gap-1 transition-colors">
                 Discover Analytics <ArrowRight size={16} />
               </button>
             </div>
@@ -201,7 +217,6 @@ const Home = () => {
 
       {/* --- BOTTOM CTA --- */}
       <section className="bg-accent py-20 px-6 relative overflow-hidden">
-        {/* Background decorative elements */}
         <div className="absolute top-0 right-0 -mt-20 -mr-20 w-64 h-64 bg-surface/10 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 left-0 -mb-20 -ml-20 w-80 h-80 bg-primary/20 rounded-full blur-3xl"></div>
 
@@ -211,8 +226,8 @@ const Home = () => {
             Join the hundreds of thousands of companies using SlipZMarket to fuel their growth. Set up takes less than 2 minutes.
           </p>
           <button 
-            onClick={handleCTA}
-            className="bg-accent hover:bg-accent text-surface px-10 py-4 rounded-xl text-[16px] font-bold shadow-xl transition-all flex items-center gap-2 mx-auto"
+            onClick={handleAuthCTA}
+            className="bg-surface hover:bg-surface-soft text-accent px-10 py-4 rounded-xl text-[16px] font-bold shadow-xl transition-all flex items-center gap-2 mx-auto"
           >
             {isAuthenticated ? 'Go to Dashboard' : 'Sign up for free'} <ArrowRight size={18} />
           </button>

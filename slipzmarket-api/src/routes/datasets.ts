@@ -183,7 +183,79 @@ router.post('/:invoiceId/remove-leads', requireAuth, CoreService.catchAsync(asyn
 
   return CoreService.success(res, 200, 'Selected leads removed');
 }));
+// --- PROSPECT SEARCH ENGINE (FREE TEASER) ---
+router.post('/search', requireAuth, CoreService.catchAsync(async (req: any, res: Response) => {
+  const { jobTitle, industry, location } = req.body;
+  const workspaceId = req.user.workspaceId;
 
+  const leadFilters: any[] = [];
+
+  if (jobTitle?.trim()) {
+    const searchTerm = jobTitle.trim();
+    leadFilters.push({
+      OR: [
+        { jobTitle: { contains: searchTerm, mode: 'insensitive' } },
+        { companyName: { contains: searchTerm, mode: 'insensitive' } },
+        { firstName: { contains: searchTerm, mode: 'insensitive' } },
+        { lastName: { contains: searchTerm, mode: 'insensitive' } },
+        { email: { contains: searchTerm, mode: 'insensitive' } },
+      ]
+    });
+  }
+
+  if (industry && industry !== 'All') {
+    leadFilters.push({ industry: { contains: industry, mode: 'insensitive' } });
+  }
+
+  if (location?.trim()) {
+    leadFilters.push({ country: { contains: location.trim(), mode: 'insensitive' } });
+  }
+
+  const where = leadFilters.length > 0 ? { AND: leadFilters } : {};
+
+  // --- CREDIT GATEKEEPER: Prevent searches when user has no remaining credits ---
+  const userRecord = await prisma.user.findUnique({
+    where: { id: req.user.userId },
+    select: { exportCreditsTotal: true, exportCreditsUsed: true }
+  });
+
+  const remaining = (userRecord?.exportCreditsTotal || 0) - (userRecord?.exportCreditsUsed || 0);
+  if (remaining <= 0) {
+    return CoreService.error(res, 403, 'Insufficient prospect credits. Please purchase more credits to perform searches.');
+  }
+
+  const unlockedProspects = await prisma.unlockedLead.findMany({
+    where: {
+      workspaceId,
+      lead: where,
+    },
+    take: 100,
+    orderBy: { unlockedAt: 'desc' },
+    include: {
+      lead: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          jobTitle: true,
+          companyName: true,
+          industry: true,
+          country: true,
+        }
+      }
+    }
+  });
+
+  const prospects = unlockedProspects.map((record) => ({
+    ...record.lead,
+    unlockedAt: record.unlockedAt,
+    invoiceId: record.invoiceId,
+  }));
+
+  return CoreService.success(res, 200, 'Unlocked prospects found', { data: prospects });
+}));
 
 
 export default router;

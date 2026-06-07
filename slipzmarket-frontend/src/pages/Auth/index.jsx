@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../utils/api';
 // MUST IMPORT THE PROVIDER
@@ -267,13 +267,18 @@ const AuthDetailsForm = ({
 // ==========================================
 const AuthComponent = () => {
   const navigate = useNavigate();
-  
+  const location = useLocation(); // <-- Added for routing state
+  const searchParams = new URLSearchParams(location.search);
+  const redirectTo = searchParams.get('redirect') || '/dashboard';
+
   useEffect(() => {
     const token = localStorage.getItem('slipz_token');
-    if (token) navigate('/dashboard'); 
-  }, [navigate]);
+    if (token) navigate(redirectTo, { replace: true });
+  }, [navigate, redirectTo]);
 
-  const [activeTab, setActiveTab] = useState('login');
+  const [activeTab, setActiveTab] = useState(() =>
+    searchParams.get('tab') === 'register' ? 'register' : 'login'
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -303,12 +308,41 @@ const AuthComponent = () => {
   };
   const passStrength = calculateStrength(formData.password);
 
-  const handleAuthSuccess = (token, user) => {
+  // --- REWRITTEN: MAGIC GUEST CART SYNC ---
+  const handleAuthSuccess = async (token, user) => {
+    // 1. Save auth data
     localStorage.setItem('slipz_token', token);
     if (user) {
       localStorage.setItem('slipz_user', JSON.stringify(user)); 
     }
-    navigate('/dashboard');
+
+    // 2. Read Guest Cart
+    const guestCartStr = localStorage.getItem('slipz_guest_cart');
+    
+    if (guestCartStr) {
+      try {
+        const guestCart = JSON.parse(guestCartStr);
+        
+        // 3. Push local items to the real API using the new token
+        if (guestCart.length > 0) {
+          await Promise.all(guestCart.map(item => 
+            axios.post(
+              `${API_URL}/cart/add`, 
+              { packageId: item.packageId, quantity: item.quantity }, 
+              { headers: { Authorization: `Bearer ${token}` } } 
+            ).catch(e => console.warn("Failed to sync item", item.packageId, e))
+          ));
+        }
+
+        // 4. Wipe local memory now that DB has it
+        localStorage.removeItem('slipz_guest_cart');
+      } catch (error) {
+        console.error("Failed to sync guest cart to DB:", error);
+      }
+    }
+
+    // 5. Smart Redirect
+    navigate(redirectTo);
   };
 
   const showSuccess = (msg) => {
@@ -316,12 +350,11 @@ const AuthComponent = () => {
     setTimeout(() => setSuccessMsg(''), 5000);
   };
 
-const handleInitialSubmit = async (e) => {
+  const handleInitialSubmit = async (e) => {
     e.preventDefault(); 
-    console.log("🚀 FORM SUBMIT TRIGGERED!"); // <--- This will now print!
+    console.log("🚀 FORM SUBMIT TRIGGERED!"); 
     console.log("Tab:", activeTab, "Data:", formData);
 
-    // --- MANUAL VALIDATION (Bypasses silent browser blocking) ---
     if (!formData.email || !formData.password) {
       return setError('Email and password are required.');
     }
@@ -343,7 +376,7 @@ const handleInitialSubmit = async (e) => {
           email: formData.email,
           password: formData.password
         });
-        handleAuthSuccess(res.data.token, res.data.user);
+        await handleAuthSuccess(res.data.token, res.data.user); // Await the sync
       }
     } catch (err) {
       console.error("🔴 API ERROR:", err);
@@ -360,6 +393,7 @@ const handleInitialSubmit = async (e) => {
       setIsLoading(false);
     }
   };
+
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -371,7 +405,7 @@ const handleInitialSubmit = async (e) => {
         pendingToken,
         code
       });
-      handleAuthSuccess(res.data.token, res.data.user);
+      await handleAuthSuccess(res.data.token, res.data.user); // Await the sync
     } catch (err) {
       setError(err.response?.data?.error || 'Invalid verification code. Please try again.');
     } finally {
@@ -386,7 +420,7 @@ const handleInitialSubmit = async (e) => {
       const res = await axios.post(`${API_URL}/auth/google`, {
         token: credentialResponse.credential
       });
-      handleAuthSuccess(res.data.token, res.data.user);
+      await handleAuthSuccess(res.data.token, res.data.user); // Await the sync
     } catch {
       setError('Google Authentication failed. Please try again.');
       setIsLoading(false);

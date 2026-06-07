@@ -123,7 +123,57 @@ router.post('/lists/mock', async (req: Request | any, res: Response) => {
 });
 
 // ==========================================
-// 5. GET EXPORT HISTORY
+// 5. CREATE A NEW LIST FROM PROSPECTS
+// ==========================================
+router.post('/lists', async (req: Request | any, res: Response) => {
+  try {
+    const userId = req.user.userId;
+    const { name, contactCount, dataType } = req.body;
+
+    if (!name || name.trim() === '') {
+      return res.status(400).json({ error: 'List name is required' });
+    }
+
+    if (!contactCount || contactCount <= 0) {
+      return res.status(400).json({ error: 'Cannot save an empty list' });
+    }
+
+    // --- Validate user has enough remaining credits to save this many leads ---
+    const userRecord = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { exportCreditsTotal: true, exportCreditsUsed: true }
+    });
+
+    const remaining = (userRecord?.exportCreditsTotal || 0) - (userRecord?.exportCreditsUsed || 0);
+    if (contactCount > remaining) {
+      return res.status(400).json({ error: `Insufficient credits. You have ${remaining} credits remaining.` });
+    }
+
+    const newList = await prisma.list.create({
+      data: {
+        name: name.trim(),
+        contactCount: contactCount,
+        dataType: dataType || 'Email & Phone',
+        status: 'Ready to Export',
+        userId: userId
+      }
+    });
+
+    // Deduct credits from the user's bucket (increment used by contactCount)
+    await prisma.user.update({
+      where: { id: userId },
+      data: { exportCreditsUsed: { increment: contactCount } }
+    });
+
+    res.status(201).json({ success: true, data: newList });
+  } catch (error) {
+    console.error('List creation error:', error);
+    res.status(500).json({ error: 'Failed to create list' });
+  }
+});
+
+// ==========================================
+// 6. GET EXPORT HISTORY
 // ==========================================
 router.get('/export-history', async (req: Request | any, res: Response) => {
   try {

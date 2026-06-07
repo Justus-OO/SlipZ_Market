@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { 
   Search, Filter, Download, Users, 
   Database as DatabaseIcon, MoreHorizontal, 
-  ArrowRight, Mail, Phone, Zap, X, FolderPlus,
+  ArrowRight, Mail, Phone, Zap, X, FolderPlus, Building2,
   CheckCircle2, Folder, Check, Loader2,
   LogOut, CreditCard, ChevronDown, User as UserIcon
 } from 'lucide-react';
@@ -35,9 +35,33 @@ const Dashboard = () => {
   // --- MODAL STATES ---
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [isSaveListModalOpen, setIsSaveListModalOpen] = useState(false);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [newListName, setNewListName] = useState('');
   const [folderLoading, setFolderLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
+  const [selectedProspects, setSelectedProspects] = useState(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem('selected_prospects') || '[]');
+    } catch (err) {
+      void err;
+      return [];
+    }
+  });
+
+  // --- PROSPECT SEARCH STATE ---
+  const [searchFilters, setSearchFilters] = useState({
+    jobTitle: '',
+    industry: 'All',
+    location: '',
+    minSize: '',
+    maxSize: ''
+  });
+  const [searchResults, setSearchResults] = useState(null);
+  const [isSearchingProspects, setIsSearchingProspects] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const resultsPerPage = 20;
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem('slipz_token');
@@ -56,20 +80,17 @@ const Dashboard = () => {
 
     const fetchDashboardData = async () => {
       try {
-        // 1. Fetch User Stats (Credits & Info)
         const statsRes = await axios.get(`${API_URL}/dashboard/stats`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStats(statsRes.data.data);
         setUser(prev => (prev ? { ...prev, ...statsRes.data.data } : statsRes.data.data));
 
-        // 2. Fetch User's Lists
         const listsRes = await axios.get(`${API_URL}/dashboard/lists`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setLists(listsRes.data.data);
 
-        // 3. Fetch Export History
         const historyRes = await axios.get(`${API_URL}/dashboard/export-history`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -86,7 +107,6 @@ const Dashboard = () => {
     fetchDashboardData();
   }, [navigate, handleLogout]);
 
-  // Handle clicking outside profile dropdown
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (profileRef.current && !profileRef.current.contains(event.target)) {
@@ -113,20 +133,70 @@ const Dashboard = () => {
     setSelectedLists(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
 
-  // --- GENERATE MOCK DATA ---
-  const handleGenerateMockList = async () => {
-    setIsLoadingLists(true);
-    const token = localStorage.getItem('slipz_token');
+const executeProspectSearch = async () => {
+  // Proactive UI gate: block searches when user has no remaining credits
+  const creditsRemaining = stats ? (stats.exportCreditsTotal - stats.exportCreditsUsed) : 0;
+  if (creditsRemaining <= 0) {
+    alert('You have no remaining prospect credits. Please purchase more to continue searching.');
+    return;
+  }
+
+  setIsSearchingProspects(true);
+  const token = localStorage.getItem('slipz_token');
+  
+  try {
+    const res = await axios.post(`${API_URL}/datasets/search`, searchFilters, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    // Ensure we are getting the array directly
+    setSearchResults(res.data.data || []);
+    setCurrentPage(1); // Reset to page 1 on new search
+  } catch (error) {
+    console.error("Search API failed:", error);
+    setSearchResults([]); 
+  } finally {
+    setIsSearchingProspects(false); 
+  }
+};
+
+  // Persist selection across modal opens so users can build a list across searches
+  useEffect(() => {
     try {
-      await axios.post(`${API_URL}/dashboard/lists/mock`, {}, { headers: { Authorization: `Bearer ${token}` } });
-      const listsRes = await axios.get(`${API_URL}/dashboard/lists`, { headers: { Authorization: `Bearer ${token}` } });
-      setLists(listsRes.data.data);
-    } catch (error) {
-      console.error("Error generating mock list:", error);
-      alert("Failed to generate test data. Check your backend console!");
-    } finally {
-      setIsLoadingLists(false);
-    }
+      sessionStorage.setItem('selected_prospects', JSON.stringify(selectedProspects));
+    } catch (err) { void err; }
+  }, [selectedProspects]);
+
+  const toggleSelectProspect = (prospect) => {
+    setSelectedProspects(prev => {
+      const exists = prev.find(p => p.id === prospect.id);
+      if (exists) return prev.filter(p => p.id !== prospect.id);
+      return [...prev, prospect];
+    });
+  };
+
+  const addAllVisibleToSelection = () => {
+    if (!searchResults || searchResults.length === 0) return;
+    setSelectedProspects(prev => {
+      const map = new Map(prev.map(p => [p.id, p]));
+      searchResults.forEach(s => map.set(s.id, s));
+      return Array.from(map.values());
+    });
+  };
+
+  const removeFromSelection = (id) => {
+    setSelectedProspects(prev => prev.filter(p => p.id !== id));
+  };
+
+  const clearSelection = () => {
+    setSelectedProspects([]);
+    try { sessionStorage.removeItem('selected_prospects'); } catch (err) { void err; }
+  };
+
+  const closeGlobalSearch = () => {
+    setIsGlobalSearchOpen(false);
+    setSearchResults(null);
+    setCurrentPage(1);
+    setSearchFilters({ jobTitle: '', industry: 'All', location: '', minSize: '', maxSize: '' });
   };
 
   // --- FOLDER CREATION ---
@@ -151,6 +221,51 @@ const Dashboard = () => {
       alert(error.response?.data?.error || "Failed to create folder");
     } finally {
       setFolderLoading(false);
+    }
+  };
+
+  const handleSaveToNewList = async (e) => {
+    e.preventDefault();
+    if (!newListName.trim()) {
+      alert('Please enter a list name.');
+      return;
+    }
+
+    setListLoading(true);
+    const token = localStorage.getItem('slipz_token');
+
+    // Determine how many contacts we're actually saving (selected overrides visible)
+    const countToSave = (selectedProspects && selectedProspects.length > 0) ? selectedProspects.length : (searchResults?.length ?? 0);
+
+    try {
+      await axios.post(`${API_URL}/dashboard/lists`,
+        {
+          name: newListName,
+          contactCount: countToSave,
+          dataType: 'Email & Phone'
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const listsRes = await axios.get(`${API_URL}/dashboard/lists`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setLists(listsRes.data.data);
+
+      // Optimistically update local stats to reflect credits spent
+      setStats(prev => ({ ...prev, exportCreditsUsed: (prev?.exportCreditsUsed || 0) + countToSave }));
+
+      setIsSaveListModalOpen(false);
+      setNewListName('');
+      // Clear selection after successful save
+      setSelectedProspects([]);
+      try { sessionStorage.removeItem('selected_prospects'); } catch (err) { void err; }
+      alert(`List "${newListName}" saved successfully!`);
+    } catch (error) {
+      console.error("Error saving list:", error);
+      alert(error.response?.data?.error || "Failed to save list");
+    } finally {
+      setListLoading(false);
     }
   };
 
@@ -187,7 +302,6 @@ const Dashboard = () => {
 
   if (!user) return null; 
 
-  // --- CALCULATIONS ---
   const creditPercentage = stats 
     ? Math.min((stats.exportCreditsUsed / stats.exportCreditsTotal) * 100, 100) 
     : 0;
@@ -299,8 +413,6 @@ const Dashboard = () => {
         {/* TAB 1: OVERVIEW */}
         {activeTab === 'Overview' && (
           <div className="animate-fade-in flex flex-col gap-6">
-            
-            {/* --- Metric Cards --- */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white border border-[#d8cdcd] rounded-xl p-5 shadow-sm flex flex-col">
                 <div className="flex items-center gap-3 mb-3">
@@ -336,10 +448,7 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* --- Bottom Split Section --- */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
-              {/* Recent Exports */}
               <div className="lg:col-span-2 bg-white border border-[#d8cdcd] rounded-xl shadow-sm overflow-hidden flex flex-col">
                 <div className="p-5 border-b border-[#d8cdcd] flex items-center justify-between">
                   <h3 className="text-[16px] font-bold text-[#2a1b1b]">Recent Exports</h3>
@@ -368,7 +477,6 @@ const Dashboard = () => {
                 )}
               </div>
 
-              {/* Quick Actions */}
               <div className="bg-white border border-[#d8cdcd] rounded-xl shadow-sm p-5">
                 <h3 className="text-[16px] font-bold text-[#2a1b1b] mb-4">Quick Actions</h3>
                 <div className="flex flex-col gap-3">
@@ -395,7 +503,6 @@ const Dashboard = () => {
                   </button>
                 </div>
               </div>
-
             </div>
           </div>
         )}
@@ -418,7 +525,6 @@ const Dashboard = () => {
               </button>
             </div>
 
-            {/* Dynamic Bulk Action Bar */}
             <div className={`bg-white border border-[#800000] rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-md transition-all duration-300 ${selectedLists.length > 0 ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 hidden'}`}>
               <div className="flex items-center gap-3">
                 <span className="bg-[#800000]/10 text-[#800000] text-[12px] font-bold px-3 py-1 rounded-full">
@@ -439,7 +545,6 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* Data Table Section */}
             <div className="bg-white border border-[#d8cdcd] rounded-xl shadow-sm overflow-hidden flex flex-col">
               <div className="p-4 border-b border-[#d8cdcd] flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white">
                 <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -481,11 +586,6 @@ const Dashboard = () => {
                             <DatabaseIcon size={28} className="text-[#d8cdcd] mb-3" />
                             <h3 className="text-[16px] font-bold text-[#2a1b1b] mb-1">No lists found</h3>
                             <p className="text-[13px] text-[#7a6b6b] mb-4">{searchQuery ? `No results matching "${searchQuery}"` : "You haven't built any lead lists yet."}</p>
-                            {!searchQuery && (
-                              <button onClick={handleGenerateMockList} className="bg-white border border-[#d8cdcd] text-[#2a1b1b] hover:bg-[#f5f2f2] px-4 py-2 rounded-lg text-[13px] font-bold shadow-sm transition-colors">
-                                + Generate Test List
-                              </button>
-                            )}
                           </div>
                         </td>
                       </tr>
@@ -653,53 +753,283 @@ const Dashboard = () => {
         </div>
       )}
 
+      {isSaveListModalOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-[#2a1b1b]/40 backdrop-blur-sm animate-fade-in" onClick={() => { setIsSaveListModalOpen(false); setNewListName(''); }} />
+          <form onSubmit={handleSaveToNewList} className="relative bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col animate-fade-in-up">
+            <div className="p-6">
+              <div className="w-12 h-12 bg-[#800000]/10 rounded-full flex items-center justify-center mb-4"><FolderPlus size={24} className="text-[#800000]" /></div>
+              <h3 className="text-xl font-bold text-[#2a1b1b] mb-1">Save search results</h3>
+              <p className="text-[13px] text-[#7a6b6b] mb-5">Save {searchResults?.length ?? 0} prospect{(searchResults?.length ?? 0) === 1 ? '' : 's'} to a new list.</p>
+              <input type="text" autoFocus placeholder="e.g., Q4 Enterprise Outreach" value={newListName} onChange={(e) => setNewListName(e.target.value)} className="w-full px-4 py-3 border border-[#d8cdcd] rounded-lg text-[14px] font-medium outline-none focus:border-[#800000] focus:ring-1 focus:ring-[#800000] transition-all" required />
+            </div>
+            <div className="p-5 border-t border-[#e8e2e2] bg-[#f9fafb] flex gap-3 justify-end">
+              <button type="button" onClick={() => { setIsSaveListModalOpen(false); setNewListName(''); }} className="px-5 py-2 text-[13px] font-bold text-[#7a6b6b] hover:text-[#2a1b1b] transition-colors">Cancel</button>
+              <button type="submit" disabled={listLoading} className="bg-[#2a1b1b] hover:bg-[#1a1010] text-white px-5 py-2 rounded-lg text-[13px] font-bold shadow-sm transition-colors flex items-center gap-2">
+                {listLoading ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Save List
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* --- FUNCTIONAL PROSPECT SEARCH MODAL --- */}
       {isGlobalSearchOpen && (
         <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-10 sm:p-10">
-          <div className="absolute inset-0 bg-[#2a1b1b]/80 backdrop-blur-sm animate-fade-in" onClick={() => setIsGlobalSearchOpen(false)} />
+          <div className="absolute inset-0 bg-[#2a1b1b]/80 backdrop-blur-sm animate-fade-in" onClick={closeGlobalSearch} />
           <div className="relative bg-white rounded-2xl w-full max-w-6xl h-[85vh] shadow-2xl overflow-hidden flex flex-col animate-fade-in-up">
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8e2e2] bg-[#f9fafb]">
               <div className="flex items-center gap-3">
                 <Search size={20} className="text-[#800000]" />
                 <h3 className="text-[16px] font-bold text-[#2a1b1b]">Advanced Prospecting</h3>
               </div>
-              <button onClick={() => setIsGlobalSearchOpen(false)} className="text-[#7a6b6b] hover:text-[#2a1b1b] bg-[#e8e2e2] hover:bg-[#d8cdcd] p-1.5 rounded-md transition-colors"><X size={18} /></button>
+              <button onClick={closeGlobalSearch} className="text-[#7a6b6b] hover:text-[#2a1b1b] bg-[#e8e2e2] hover:bg-[#d8cdcd] p-1.5 rounded-md transition-colors"><X size={18} /></button>
             </div>
+            
             <div className="flex flex-1 overflow-hidden">
+              {/* LEFT PANEL: FILTERS */}
               <div className="w-72 border-r border-[#e8e2e2] bg-white overflow-y-auto p-5 flex flex-col gap-6">
                 <div>
                   <label className="text-[12px] font-bold text-[#7a6b6b] uppercase tracking-wider mb-2 block">Job Titles</label>
-                  <input type="text" placeholder="e.g. Chief Marketing Officer" className="w-full px-3 py-2 border border-[#d8cdcd] rounded-lg text-[13px] outline-none focus:border-[#800000]" />
+                  <input 
+                    type="text" 
+                    value={searchFilters.jobTitle}
+                    onChange={(e) => setSearchFilters({...searchFilters, jobTitle: e.target.value})}
+                    placeholder="e.g. Chief Marketing Officer" 
+                    className="w-full px-3 py-2 border border-[#d8cdcd] rounded-lg text-[13px] outline-none focus:border-[#800000]" 
+                  />
                 </div>
                 <div>
                   <label className="text-[12px] font-bold text-[#7a6b6b] uppercase tracking-wider mb-2 block">Industry</label>
-                  <select className="w-full px-3 py-2 border border-[#d8cdcd] rounded-lg text-[13px] outline-none focus:border-[#800000]">
-                    <option>Software Development</option>
-                    <option>Financial Services</option>
-                    <option>Healthcare</option>
-                  </select>
+<select 
+  value={searchFilters.industry}
+  onChange={(e) => setSearchFilters({...searchFilters, industry: e.target.value})}
+  className="w-full px-3 py-2 border border-[#d8cdcd] rounded-lg text-[13px] outline-none focus:border-[#800000]"
+>
+  <option value="">All Industries</option>
+  <option value="Software Development">Software Development</option>
+  <option value="Consulting">Consulting</option>
+  <option value="Logistics">Logistics</option>
+  <option value="Finance">Finance</option>
+  <option value="Healthcare">Healthcare</option>
+  <option value="Manufacturing">Manufacturing</option>
+  <option value="Retail">Retail</option>
+  <option value="Real Estate">Real Estate</option>
+  <option value="Marketing & Advertising">Marketing & Advertising</option>
+  <option value="Education">Education</option>
+</select>
                 </div>
                 <div>
                   <label className="text-[12px] font-bold text-[#7a6b6b] uppercase tracking-wider mb-2 block">Location</label>
-                  <input type="text" placeholder="e.g. United States, London" className="w-full px-3 py-2 border border-[#d8cdcd] rounded-lg text-[13px] outline-none focus:border-[#800000]" />
+                  <input 
+                    type="text" 
+                    value={searchFilters.location}
+                    onChange={(e) => setSearchFilters({...searchFilters, location: e.target.value})}
+                    placeholder="e.g. United States, London" 
+                    className="w-full px-3 py-2 border border-[#d8cdcd] rounded-lg text-[13px] outline-none focus:border-[#800000]" 
+                  />
                 </div>
                 <div>
                   <label className="text-[12px] font-bold text-[#7a6b6b] uppercase tracking-wider mb-2 block">Company Size</label>
                   <div className="flex gap-2">
-                    <input type="number" placeholder="Min" className="w-full px-3 py-2 border border-[#d8cdcd] rounded-lg text-[13px] outline-none focus:border-[#800000]" />
-                    <input type="number" placeholder="Max" className="w-full px-3 py-2 border border-[#d8cdcd] rounded-lg text-[13px] outline-none focus:border-[#800000]" />
+                    <input 
+                      type="number" 
+                      value={searchFilters.minSize}
+                      onChange={(e) => setSearchFilters({...searchFilters, minSize: e.target.value})}
+                      placeholder="Min" 
+                      className="w-full px-3 py-2 border border-[#d8cdcd] rounded-lg text-[13px] outline-none focus:border-[#800000]" 
+                    />
+                    <input 
+                      type="number" 
+                      value={searchFilters.maxSize}
+                      onChange={(e) => setSearchFilters({...searchFilters, maxSize: e.target.value})}
+                      placeholder="Max" 
+                      className="w-full px-3 py-2 border border-[#d8cdcd] rounded-lg text-[13px] outline-none focus:border-[#800000]" 
+                    />
                   </div>
                 </div>
-                <button className="w-full bg-[#2a1b1b] text-white py-2.5 rounded-lg text-[13px] font-bold shadow-sm hover:bg-black transition-colors mt-auto">
+                <button 
+                  onClick={executeProspectSearch}
+                  disabled={isSearchingProspects}
+                  className="w-full bg-[#800000] text-white py-2.5 rounded-lg text-[13px] font-bold shadow-sm hover:bg-[#660000] transition-colors mt-auto flex justify-center items-center gap-2"
+                >
+                  {isSearchingProspects ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
                   Apply Filters
                 </button>
               </div>
-              <div className="flex-1 bg-[#f9fafb] flex flex-col items-center justify-center p-10 text-center">
-                 <div className="w-20 h-20 bg-white border border-[#d8cdcd] rounded-full flex items-center justify-center mb-6 shadow-sm">
-                   <Users size={32} className="text-[#800000]" />
-                 </div>
-                 <h2 className="text-xl font-bold text-[#2a1b1b] mb-2">270,000,000+ Contacts</h2>
-                 <p className="text-[14px] text-[#7a6b6b] max-w-md">Use the filters on the left to narrow down your ideal customer profile. Once you build a list, you can save it to your dashboard.</p>
-              </div>
+
+              {/* CENTER PANEL: RESULTS OR DEFAULT VIEW */}
+              {isSearchingProspects ? (
+                <div className="flex-1 bg-[#f9fafb] flex flex-col items-center justify-center p-10 text-center">
+                  <Loader2 size={32} className="animate-spin text-[#800000] mb-4" />
+                  <h2 className="text-lg font-bold text-[#2a1b1b]">Searching Database...</h2>
+                  <p className="text-[13px] text-[#7a6b6b] mt-2">Querying 270M+ records based on your criteria.</p>
+                </div>
+              ) : searchResults !== null ? (
+                <div className="flex-1 bg-white flex flex-col">
+                  <div className="p-4 border-b border-[#e8e2e2] flex justify-between items-center bg-[#f9fafb]">
+                    <div>
+                      <h3 className="text-[14px] font-bold text-[#2a1b1b]">Found {searchResults.length} prospects</h3>
+                      <p className="text-[11px] text-[#7a6b6b]">Select contacts below to build your lead list.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsSaveListModalOpen(true)}
+                      disabled={searchResults.length === 0}
+                      className="bg-[#800000] disabled:cursor-not-allowed disabled:bg-[#d1c0c0] hover:bg-[#660000] transition-colors text-white px-4 py-2 rounded-lg text-[12px] font-bold shadow-sm flex items-center gap-2"
+                    >
+                      <FolderPlus size={14} /> Save to New List
+                    </button>
+                  </div>
+                  
+                  {searchResults.length === 0 ? (
+                    <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
+                      <Search size={32} className="text-[#d8cdcd] mb-3" />
+                      <p className="text-[#2a1b1b] font-bold text-[14px]">No prospects found</p>
+                      <p className="text-[#7a6b6b] text-[12px]">Try broadening your search criteria.</p>
+                    </div>
+                  ) : (
+                    <div className="flex-1 overflow-y-auto flex flex-col">
+                      {/* Calculate paginated results */}
+                      {(() => {
+                        const totalPages = Math.ceil(searchResults.length / resultsPerPage);
+                        const startIdx = (currentPage - 1) * resultsPerPage;
+                        const endIdx = startIdx + resultsPerPage;
+                        const paginatedResults = searchResults.slice(startIdx, endIdx);
+                        
+                        return (
+                          <>
+                            <table className="w-full text-left border-collapse">
+                              <thead className="bg-white sticky top-0 border-b border-[#e8e2e2] shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                                <tr>
+                                  <th className="px-5 py-3 w-12 text-left">
+                                    <input
+                                      type="checkbox"
+                                      className="cursor-pointer"
+                                      checked={paginatedResults.length > 0 && paginatedResults.every(s => selectedProspects.some(p => p.id === s.id))}
+                                      onChange={(e) => { if (e.target.checked) addAllVisibleToSelection(); else { setSelectedProspects(prev => prev.filter(p => !paginatedResults.some(s => s.id === p.id))); } }}
+                                    />
+                                  </th>
+                                  <th className="px-5 py-3 text-[11px] font-bold text-[#7a6b6b] uppercase tracking-wider">Prospect Name</th>
+                                  <th className="px-5 py-3 text-[11px] font-bold text-[#7a6b6b] uppercase tracking-wider">Job Title</th>
+                                  <th className="px-5 py-3 text-[11px] font-bold text-[#7a6b6b] uppercase tracking-wider">Company</th>
+                                  <th className="px-5 py-3 text-[11px] font-bold text-[#7a6b6b] uppercase tracking-wider">Location</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-[#e8e2e2]">
+                                {paginatedResults.map((prospect) => (
+                                  <tr key={prospect.id} className="hover:bg-[#f9fafb] transition-colors group">
+                                    <td className="px-5 py-4">
+                                      <input type="checkbox" checked={selectedProspects.some(p => p.id === prospect.id)} onChange={() => toggleSelectProspect(prospect)} className="cursor-pointer" />
+                                    </td>
+                                    <td className="px-5 py-4">
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-full bg-[#f5f2f2] text-[#800000] flex items-center justify-center text-[11px] font-bold">
+                                          {prospect.firstName?.charAt(0)}
+                                        </div>
+                                        <span className="text-[13px] font-bold text-[#2a1b1b]">
+                                          {prospect.firstName} {prospect.lastName}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="px-5 py-4 text-[13px] text-[#4a3b3b] font-medium">{prospect.jobTitle}</td>
+                                    <td className="px-5 py-4 text-[13px] text-[#7a6b6b] flex items-center gap-2">
+                                      <Building2 size={14} /> {prospect.companyName}
+                                    </td>
+                                    <td className="px-5 py-4 text-[13px] text-[#7a6b6b]">{prospect.country}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            
+                            {/* Pagination Controls */}
+                            <div className="border-t border-[#e8e2e2] bg-[#f9fafb] px-4 py-3 flex items-center justify-between">
+                              <span className="text-[12px] text-[#7a6b6b] font-medium">
+                                Showing {startIdx + 1}–{Math.min(endIdx, searchResults.length)} of {searchResults.length} prospects
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <button 
+                                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                  disabled={currentPage === 1}
+                                  className="px-3 py-1.5 border border-[#d8cdcd] rounded-lg text-[12px] font-medium text-[#2a1b1b] disabled:text-[#7a6b6b] disabled:bg-[#f9fafb] hover:bg-white transition-colors disabled:cursor-not-allowed"
+                                >
+                                  ← Prev
+                                </button>
+                                <div className="flex items-center gap-1">
+                                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                                    <button
+                                      key={page}
+                                      onClick={() => setCurrentPage(page)}
+                                      className={`w-8 h-8 rounded text-[11px] font-bold transition-colors ${
+                                        currentPage === page
+                                          ? 'bg-[#800000] text-white'
+                                          : 'border border-[#d8cdcd] text-[#2a1b1b] hover:bg-[#f5f2f2]'
+                                      }`}
+                                    >
+                                      {page}
+                                    </button>
+                                  ))}
+                                </div>
+                                <button 
+                                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                  disabled={currentPage === totalPages}
+                                  className="px-3 py-1.5 border border-[#d8cdcd] rounded-lg text-[12px] font-medium text-[#2a1b1b] disabled:text-[#7a6b6b] disabled:bg-[#f9fafb] hover:bg-white transition-colors disabled:cursor-not-allowed"
+                                >
+                                  Next →
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex-1 bg-[#f9fafb] flex flex-col items-center justify-center p-10 text-center">
+                   <div className="w-20 h-20 bg-white border border-[#d8cdcd] rounded-full flex items-center justify-center mb-6 shadow-sm">
+                     <Users size={32} className="text-[#800000]" />
+                   </div>
+                   <h2 className="text-xl font-bold text-[#2a1b1b] mb-2">270,000,000+ Contacts</h2>
+                   <p className="text-[14px] text-[#7a6b6b] max-w-md">Use the filters on the left to narrow down your ideal customer profile. Once you build a list, you can save it to your dashboard.</p>
+                </div>
+              )}
+
+              {/* RIGHT PANEL: SELECTION CART */}
+              {searchResults !== null && (
+                <div className="w-72 border-l border-[#e8e2e2] bg-white overflow-y-auto p-4 flex flex-col gap-4">
+                  <div className="flex items-center justify-between sticky top-0 bg-white pb-3 border-b border-[#e8e2e2]">
+                    <h4 className="text-[14px] font-bold text-[#2a1b1b]">Selection ({selectedProspects.length})</h4>
+                    <button onClick={clearSelection} className="text-[12px] font-medium text-[#800000] hover:text-[#660000]">Clear</button>
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    {selectedProspects.length === 0 ? (
+                      <p className="text-[13px] text-[#7a6b6b] text-center py-4">No prospects selected yet. Use the checkboxes to add.</p>
+                    ) : (
+                      selectedProspects.map(p => (
+                        <div key={p.id} className="p-2 border border-[#e8e2e2] rounded-lg hover:border-[#800000] transition-colors">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="text-[12px] font-bold text-[#2a1b1b] truncate">{p.firstName} {p.lastName}</div>
+                              <div className="text-[11px] text-[#7a6b6b] truncate">{p.jobTitle}</div>
+                              <div className="text-[11px] text-[#7a6b6b] truncate">{p.companyName}</div>
+                            </div>
+                            <button onClick={() => removeFromSelection(p.id)} className="text-[#800000] hover:text-[#660000] text-xs font-bold">✕</button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="border-t border-[#e8e2e2] pt-3 space-y-2">
+                    <button onClick={() => setIsSaveListModalOpen(true)} disabled={selectedProspects.length === 0} className="w-full bg-[#800000] disabled:bg-[#d1c0c0] text-white py-2 rounded-lg text-[12px] font-bold hover:bg-[#660000] transition-colors">
+                      Save {selectedProspects.length > 0 ? `(${selectedProspects.length})` : ''}
+                    </button>
+                    <button onClick={addAllVisibleToSelection} className="w-full bg-white border border-[#d8cdcd] text-[#2a1b1b] py-2 rounded-lg text-[12px] font-medium hover:bg-[#f9fafb] transition-colors">
+                      + Add All Visible
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
