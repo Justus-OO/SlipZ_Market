@@ -76,6 +76,8 @@ model User {
   marketingEmails  Boolean @default(false)
   isBlacklisted    Boolean @default(false)
 
+  invoices    Invoice[]
+
   workspaceId String
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
@@ -86,6 +88,7 @@ model User {
   lists      List[]
   exportLogs ExportLog[]
   cartItems  CartItem[]
+ 
 
   customerSessions ChatSession[] @relation("UserSessions")
   assignedSessions ChatSession[] @relation("AgentSessions")
@@ -115,6 +118,9 @@ model Package {
   deliverability String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  includesEmail  Boolean  @default(false)
+  includesPhone  Boolean  @default(false)
 
   cartItems CartItem[]
   invoiceItems InvoiceItem[]
@@ -163,6 +169,11 @@ model Invoice {
 
   items InvoiceItem[]
   unlockedLeads UnlockedLead[]
+
+  userId      String
+  user        User    @relation(fields: [userId], references: [id])
+
+
 
   workspaceId String
   workspace   Workspace @relation(fields: [workspaceId], references: [id])

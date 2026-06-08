@@ -1,12 +1,12 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
-  TrendingUp, Users, Database, DollarSign, 
+  Users, Database, DollarSign, 
   Activity, AlertTriangle, CheckCircle2, 
   MoreVertical, Download, ArrowUpRight, 
-  ArrowDownRight, Calendar, Bell, Mail, Phone,
+  ArrowDownRight, Mail, Search,
   Server, ShieldCheck, Zap, Megaphone, UserCog, 
-  BarChart2, Globe, Lock, Search, Filter,
+  BarChart2, Globe,
   X, Send, Eye, RefreshCw, Ban, Loader2, FileText, Check
 } from 'lucide-react';
 
@@ -28,8 +28,10 @@ const AdminDashboard = () => {
   // Data States
   const [kpis, setKpis] = useState([]);
   const [chartData, setChartData] = useState([]);
+  const [users, setUsers] = useState([]);
   const [activities, setActivities] = useState([]);
   const [systemHealth, setSystemHealth] = useState([]);
+  const [userSearch, setUserSearch] = useState('');
 
   // --- MODAL STATES ---
   const [activeMenuId, setActiveMenuId] = useState(null);
@@ -49,8 +51,14 @@ const AdminDashboard = () => {
     return () => window.removeEventListener('click', handleOutsideClick);
   }, []);
 
+  // --- FUNCTIONAL HANDLERS ---
+  const showToast = useCallback((msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
   // --- API DATA FETCHING ---
-  const fetchDashboardData = async (isManualRefresh = false) => {
+  const fetchDashboardData = useCallback(async (isManualRefresh = false) => {
     if (isManualRefresh) setIsRefreshing(true);
     else setIsLoading(true);
 
@@ -85,25 +93,43 @@ const AdminDashboard = () => {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, [timeRange, showToast]);
+
+  const fetchUsers = useCallback(async () => {
+    try {
+      const response = await fetch('/api/admin/dashboard/users', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) throw new Error('Network response was not ok');
+
+      const { data, success, message } = await response.json();
+      if (!success) throw new Error(message || 'Failed to load users');
+
+      setUsers(data || []);
+    } catch (error) {
+      console.error('Failed to load admin users:', error);
+      showToast('Failed to load users. Check connection.', 'error');
+    }
+  }, [showToast]);
 
   // Re-fetch when timeRange changes
   useEffect(() => {
     fetchDashboardData();
-  }, [timeRange]);
-
-
-  // --- FUNCTIONAL HANDLERS ---
-  const showToast = (msg, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+    fetchUsers();
+  }, [fetchDashboardData, fetchUsers]);
 
   const handleExportCSV = () => {
     if (chartData.length === 0) return showToast('No data available to export.', 'error');
 
-    const headers = ['Period', 'Relative Volume'];
-    const rows = chartData.map(data => [data.label, data.value]);
+    const headers = ['Period', 'Amount'];
+    const rows = chartData.map(data => [
+      data.label,
+      data.amount != null ? Number(data.amount).toFixed(2) : data.value
+    ]);
     const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
       
     const encodedUri = encodeURI(csvContent);
@@ -177,6 +203,44 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleUserAction = async (actionType, id) => {
+    const targetUser = users.find(user => user.id === id);
+    if (!targetUser) {
+      return showToast('User not found.', 'error');
+    }
+
+    const payload = {};
+    if (actionType === 'toggleBlacklist') {
+      payload.action = 'toggleBlacklist';
+    }
+
+    if (actionType === 'toggleRole') {
+      payload.role = targetUser.role === 'ADMIN' ? 'USER' : 'ADMIN';
+    }
+
+    try {
+      const response = await fetch(`/api/admin/dashboard/users/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Failed to update user');
+      }
+
+      setUsers(prev => prev.map(user => user.id === id ? result.data : user));
+      showToast('User updated successfully.');
+    } catch (err) {
+      console.error('Failed to update user:', err);
+      showToast(err.message || 'Failed to update user', 'error');
+    }
+  };
+
   const handleGenerateTaxReport = (e) => {
     e.preventDefault();
     setIsTaxModalOpen(false);
@@ -194,6 +258,17 @@ const AdminDashboard = () => {
       log.action.toLowerCase().includes(activitySearch.toLowerCase())
     );
   }, [activities, activitySearch]);
+
+  const filteredUsers = useMemo(() => {
+    const query = userSearch.trim().toLowerCase();
+    if (!query) return users;
+    return users.filter(user => {
+      const displayName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+      return [displayName, user.email, user.role].some(value =>
+        value?.toLowerCase().includes(query)
+      );
+    });
+  }, [users, userSearch]);
 
   // Loading Screen Match
   if (isLoading) {
@@ -234,7 +309,7 @@ const AdminDashboard = () => {
               ))}
             </div>
             <button 
-              onClick={() => fetchDashboardData(true)}
+              onClick={() => { fetchDashboardData(true); fetchUsers(); }}
               disabled={isRefreshing}
               className="flex items-center gap-2 bg-[#8b6f5a] hover:bg-[#6c5544] text-white px-4 py-2.5 rounded-lg shadow-sm text-[14px] font-bold transition-all disabled:opacity-70"
             >
@@ -333,7 +408,7 @@ const AdminDashboard = () => {
                   <div key={i} className="flex flex-col items-center gap-3 flex-1 group z-10 h-full justify-end">
                     <div className="w-full relative flex justify-center h-full items-end">
                       <div className="absolute -top-10 opacity-0 group-hover:opacity-100 bg-[#3b2a23] text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition-opacity whitespace-nowrap z-20 shadow-xl border border-[#8b6f5a]">
-                        Val: {data.value}%
+                        {data.amount != null ? `Amount: £${Number(data.amount).toFixed(2)}` : `Val: ${data.value}%`}
                       </div>
                       <div 
                         className="w-3/4 bg-[#d6c9b8] group-hover:bg-[#8b6f5a] rounded-t-md transition-all duration-500"
@@ -482,6 +557,85 @@ const AdminDashboard = () => {
                             </button>
                           </div>
                         )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 5. CRM USER MANAGEMENT */}
+        <div className="bg-white border border-[#d6c9b8] rounded-2xl shadow-sm overflow-hidden flex flex-col mb-10">
+          <div className="p-5 border-b border-[#d6c9b8] bg-[#faf6f0] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-[16px] font-bold text-[#3b2a23] flex items-center gap-2">
+                <UserCog size={18} className="text-[#8b6f5a]" /> CRM User Management
+              </h3>
+              <p className="text-[13px] text-[#8b6f5a] font-medium">Manage platform users, roles, and suspend/reactivate accounts from the CRM control panel.</p>
+            </div>
+            <div className="relative w-full sm:w-96">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8b6f5a]" />
+              <input
+                type="text"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Search customers, email, or role..."
+                className="w-full bg-white border border-[#d6c9b8] rounded-lg pl-9 pr-3 py-2 text-[13px] font-medium text-[#3b2a23] outline-none focus:border-[#8b6f5a] focus:ring-1 focus:ring-[#8b6f5a]"
+              />
+            </div>
+          </div>
+
+          <div className="overflow-x-auto relative">
+            <table className="w-full text-left border-collapse min-w-[800px]">
+              <thead>
+                <tr className="bg-white border-b border-[#d6c9b8]">
+                  <th className="px-6 py-4 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Name / Email</th>
+                  <th className="px-6 py-4 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Role</th>
+                  <th className="px-6 py-4 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Credits</th>
+                  <th className="px-6 py-4 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Joined</th>
+                  <th className="px-6 py-4 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Status</th>
+                  <th className="px-6 py-4 text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#d6c9b8]/50">
+                {filteredUsers.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="px-6 py-12 text-center text-[#8b6f5a] text-[13px] font-medium">
+                      No users found matching "{userSearch}".
+                    </td>
+                  </tr>
+                ) : (
+                  filteredUsers.map((user) => (
+                    <tr key={user.id} className="hover:bg-[#faf6f0] transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[14px] font-bold text-[#3b2a23] truncate max-w-[280px]">{`${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Unnamed'}</span>
+                          <span className="text-[12px] text-[#8b6f5a] truncate max-w-[280px]">{user.email}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-[13px] font-medium text-[#3b2a23]">{user.role}</td>
+                      <td className="px-6 py-4 text-[13px] text-[#3b2a23] font-mono">{user.exportCreditsUsed}/{user.exportCreditsTotal}</td>
+                      <td className="px-6 py-4 text-[13px] text-[#8b6f5a]">{new Date(user.createdAt).toLocaleDateString()}</td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-widest border ${user.isBlacklisted ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
+                          {user.isBlacklisted ? 'Suspended' : 'Active'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right flex flex-col sm:flex-row sm:justify-end gap-2">
+                        <button
+                          onClick={() => handleUserAction('toggleBlacklist', user.id)}
+                          className={`text-[12px] font-bold px-3 py-2 rounded-xl transition-all ${user.isBlacklisted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}
+                        >
+                          {user.isBlacklisted ? 'Reinstate' : 'Suspend'}
+                        </button>
+                        <button
+                          onClick={() => handleUserAction('toggleRole', user.id)}
+                          className="text-[12px] font-bold px-3 py-2 rounded-xl bg-[#faf6f0] border border-[#d6c9b8] text-[#3b2a23] hover:bg-[#f5efe6]"
+                        >
+                          {user.role === 'ADMIN' ? 'Demote' : 'Promote'}
+                        </button>
                       </td>
                     </tr>
                   ))

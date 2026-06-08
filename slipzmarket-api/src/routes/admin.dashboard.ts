@@ -22,6 +22,86 @@ router.get('/', /* requireAuth, requireAdmin, */ async (req, res) => {
 });
 
 // ==========================================
+// GET: CRM User Management List
+// ==========================================
+router.get('/users', /* requireAuth, requireAdmin, */ async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        isBlacklisted: true,
+        workspaceId: true,
+        createdAt: true,
+        exportCreditsTotal: true,
+        exportCreditsUsed: true,
+        planTier: true,
+      }
+    });
+
+    res.status(200).json({ success: true, data: users });
+  } catch (error: any) {
+    console.error('Admin user list error:', error);
+    res.status(500).json({ success: false, message: 'Failed to load users' });
+  }
+});
+
+// ==========================================
+// PATCH: Update CRM User Status or Role
+// ==========================================
+router.patch('/users/:id', /* requireAuth, requireAdmin, */ async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, role } = req.body;
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const updates: any = {};
+
+    if (action === 'toggleBlacklist') {
+      updates.isBlacklisted = !user.isBlacklisted;
+    }
+
+    if (role && ['USER', 'ADMIN', 'AGENT'].includes(role)) {
+      updates.role = role;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ success: false, message: 'No valid update action provided' });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: updates
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        action: updates.isBlacklisted !== undefined ? (updatedUser.isBlacklisted ? 'USER_SUSPENDED' : 'USER_REACTIVATED') : 'USER_ROLE_UPDATED',
+        userId: 'system_admin',
+        metadata: {
+          targetUserId: id,
+          role: updatedUser.role,
+          isBlacklisted: updatedUser.isBlacklisted
+        }
+      }
+    });
+
+    res.status(200).json({ success: true, data: updatedUser });
+  } catch (error: any) {
+    console.error('Admin user update error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update user' });
+  }
+});
+
+// ==========================================
 // POST: Global Announcement (Email Blast)
 // ==========================================
 router.post('/announcement', /* requireAuth, requireAdmin, */ async (req, res) => {

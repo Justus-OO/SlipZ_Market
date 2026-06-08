@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../db.js';
-import { requireAuth } from './middleware/auth.middleware.js'; // Adjust path if needed
+import { requireAuth } from './middleware/auth.middleware.js';
+import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 
@@ -122,53 +123,124 @@ router.post('/lists/mock', async (req: Request | any, res: Response) => {
   }
 });
 
-// ==========================================
-// 5. CREATE A NEW LIST FROM PROSPECTS
-// ==========================================
+// 5. CREATE A NEW LIST & ALLOCATE LEADS
 router.post('/lists', async (req: Request | any, res: Response) => {
   try {
-    const userId = req.user.userId;
-    const { name, contactCount, dataType } = req.body;
+    const { userId, workspaceId } = req.user;
+    const { name, contactCount, dataType, selectedLeadIds, listId } = req.body;
 
-    if (!name || name.trim() === '') {
-      return res.status(400).json({ error: 'List name is required' });
+    if (!Array.isArray(selectedLeadIds) || selectedLeadIds.length === 0) {
+      return res.status(400).json({ error: 'No leads selected for saving.' });
     }
 
+    const validLeadIds = selectedLeadIds
+      .map((leadId: any) => (typeof leadId === 'string' ? leadId.trim() : String(leadId).trim()))
+      .filter((leadId: string) => leadId.length > 0);
+    const uniqueLeadIds = Array.from(new Set(validLeadIds));
+
+    if (uniqueLeadIds.length === 0) {
+      return res.status(400).json({ error: 'No valid lead IDs provided.' });
+    }
+
+    const amountToSave = uniqueLeadIds.length;
     if (!contactCount || contactCount <= 0) {
-      return res.status(400).json({ error: 'Cannot save an empty list' });
+      return res.status(400).json({ error: 'Invalid prospect count.' });
     }
 
-    // --- Validate user has enough remaining credits to save this many leads ---
-    const userRecord = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { exportCreditsTotal: true, exportCreditsUsed: true }
-    });
+    const result = await prisma.$transaction(
+      async (tx) => {
+        // 1. Credit Check
+        const user = await tx.user.findUnique({
+          where: { id: userId },
+          select: { exportCreditsTotal: true, exportCreditsUsed: true }
+        });
+        const remaining = (user?.exportCreditsTotal || 0) - (user?.exportCreditsUsed || 0);
+        
+        if (amountToSave > remaining) {
+          throw new Error('INSUFFICIENT_CREDITS');
+        }
 
-    const remaining = (userRecord?.exportCreditsTotal || 0) - (userRecord?.exportCreditsUsed || 0);
-    if (contactCount > remaining) {
-      return res.status(400).json({ error: `Insufficient credits. You have ${remaining} credits remaining.` });
-    }
+        // 2. Create a system invoice record for this saved-list allocation.
+        const systemInvoice = await tx.invoice.create({
+          data: {
+            id: uuidv4(),
+            description: listId ? 'Saved list allocation' : `Saved list allocation for ${name?.trim()}`,
+            amount: 0,
+            status: 'COMPLETED',
+            userId,
+            workspaceId
+          }
+        });
 
-    const newList = await prisma.list.create({
-      data: {
-        name: name.trim(),
-        contactCount: contactCount,
-        dataType: dataType || 'Email & Phone',
-        status: 'Ready to Export',
-        userId: userId
+        // 3. Allocate Leads to Workspace
+        const uniqueLeadIds = Array.from(new Set(validLeadIds));
+        await tx.unlockedLead.createMany({
+          data: uniqueLeadIds.map((leadId: string) => ({
+            workspaceId,
+            leadId,
+            invoiceId: systemInvoice.id
+          })),
+          skipDuplicates: true
+        });
+
+        let savedList;
+
+        if (listId) {
+          const existingList = await tx.list.findFirst({
+            where: {
+              id: listId,
+              userId
+            }
+          });
+
+          if (!existingList) {
+            throw new Error('List not found');
+          }
+
+          savedList = await tx.list.update({
+            where: { id: listId },
+            data: { contactCount: existingList.contactCount + amountToSave }
+          });
+        } else {
+          if (!name) {
+            throw new Error('List name is required');
+          }
+
+          savedList = await tx.list.create({
+            data: {
+              name: name.trim(),
+              contactCount: amountToSave,
+              dataType,
+              status: 'Ready to Export',
+              userId
+            }
+          });
+        }
+
+        // 3. Deduct Credits
+        await tx.user.update({
+          where: { id: userId },
+          data: { exportCreditsUsed: { increment: amountToSave } }
+        });
+
+        return savedList;
+      },
+      {
+        timeout: 30000 // 30 second timeout
       }
-    });
+    );
 
-    // Deduct credits from the user's bucket (increment used by contactCount)
-    await prisma.user.update({
-      where: { id: userId },
-      data: { exportCreditsUsed: { increment: contactCount } }
-    });
-
-    res.status(201).json({ success: true, data: newList });
-  } catch (error) {
-    console.error('List creation error:', error);
-    res.status(500).json({ error: 'Failed to create list' });
+    res.status(201).json({ success: true, data: result });
+  } catch (error: any) {
+    console.error('🔴 Dashboard save list error:', error.message || error);
+    console.error('🔴 Full error object:', error);
+    if (error.message === 'INSUFFICIENT_CREDITS') {
+      return res.status(403).json({ error: 'Insufficient credits to save this list.' });
+    }
+    if (error.message === 'List not found') {
+      return res.status(404).json({ error: 'Selected list does not exist.' });
+    }
+    res.status(400).json({ error: error.message || 'Failed to save list.', details: error });
   }
 });
 
@@ -191,65 +263,37 @@ router.get('/export-history', async (req: Request | any, res: Response) => {
   }
 });
 
-// ==========================================
 // 6. BULK EXPORT LISTS TO CSV
-// ==========================================
 router.post('/lists/export', async (req: Request | any, res: Response) => {
   const { listIds } = req.body; 
-  const userId = req.user.userId;
-
-  if (!listIds || !Array.isArray(listIds) || listIds.length === 0) {
-    return res.status(400).json({ error: 'No lists selected for export' });
-  }
+  const { userId, workspaceId } = req.user;
 
   try {
-    const lists = await prisma.list.findMany({
-      where: {
-        id: { in: listIds },
-        userId: userId
-      }
+    // 1. Fetch leads that belong to these lists (via UnlockedLead)
+    // Note: Ensure your UI passes the list names or filter criteria
+    const unlockedLeads = await prisma.unlockedLead.findMany({
+      where: { workspaceId },
+      include: { lead: true }
     });
 
-    if (lists.length === 0) {
-      return res.status(404).json({ error: 'Selected lists not found' });
-    }
-
-    await prisma.list.updateMany({
-      where: { id: { in: listIds }, userId: userId },
-      data: { status: 'Exported' }
-    });
-
-    let totalRecords = 0;
-    const logPromises = lists.map(list => {
-      totalRecords += list.contactCount;
-      return prisma.exportLog.create({
-        data: {
-          userId: userId,
-          listName: list.name,
-          recordCount: list.contactCount
-        }
-      });
-    });
-    await Promise.all(logPromises);
-
-    // Generate Mock CSV Payload data string
+    // 2. Generate CSV from UnlockedLead records
     let csvContent = "First Name,Last Name,Email,Phone,Company,Job Title,Country\n";
-    
-    lists.forEach(list => {
-      for (let i = 1; i <= list.contactCount; i++) {
-        csvContent += `John,Doe_${list.name.replace(/\s+/g, '')}_${i},john.doe.${i}@example.com,+15550199,Enterprise Corp,Manager,United States\n`;
-      }
+    unlockedLeads.forEach(item => {
+      csvContent += `${item.lead.firstName},${item.lead.lastName},${item.lead.email},${item.lead.phone},${item.lead.companyName},${item.lead.jobTitle},${item.lead.country}\n`;
     });
 
-    res.status(200).json({ 
-      success: true, 
-      csvData: csvContent, 
-      filename: `slipz_export_${Date.now()}.csv` 
+    // 3. Log the history
+    await prisma.exportLog.createMany({
+      data: listIds.map((id: string) => ({
+        userId,
+        listName: 'Bulk Export',
+        recordCount: unlockedLeads.length
+      }))
     });
 
+    res.status(200).json({ success: true, csvData: csvContent });
   } catch (error) {
-    console.error('Export processing error:', error);
-    res.status(500).json({ error: 'Export processing failed' });
+    res.status(500).json({ error: 'Export failed' });
   }
 });
 

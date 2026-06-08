@@ -7,7 +7,7 @@ import { MailerService } from '../services/mailer.service';
 export const startInactivityJob = () => {
   // Use 10,000ms (10 seconds)
   setInterval(async () => {
-    console.log("Checking for stale sessions...");
+   // console.log("Checking for stale sessions...");
     
     // Set your threshold to 10 seconds for local testing
     const tenSecondsAgo = new Date(Date.now() - 10 * 1000); 

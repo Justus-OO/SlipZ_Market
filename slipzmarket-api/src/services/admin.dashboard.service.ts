@@ -36,15 +36,13 @@ export const DashboardService = {
   async getOverviewData(timeRange: string) {
     const startDate = this.getStartDate(timeRange);
     const now = new Date();
-    
-    // Calculate the length of the timeframe window to find the prior interval boundary
     const windowMs = now.getTime() - startDate.getTime();
     const previousStartDate = new Date(startDate.getTime() - windowMs);
 
     // --- 1. REVENUE KPI ---
     const [currentRevAgg, prevRevAgg] = await Promise.all([
       prisma.invoice.aggregate({
-        where: { status: 'COMPLETED', date: { gte: startDate } },
+        where: { status: 'COMPLETED', date: { gte: startDate, lt: now } },
         _sum: { amount: true }
       }),
       prisma.invoice.aggregate({
@@ -57,38 +55,39 @@ export const DashboardService = {
     const revPrev = Number(prevRevAgg._sum.amount || 0);
     const revTrendResult = this.calculateTrend(revCurrent, revPrev);
 
-    // --- 2. ACTIVE WORKSPACES KPI ---
-    const [currentWorkspaces, prevWorkspaces] = await Promise.all([
-      prisma.workspace.count({ where: { createdAt: { gte: startDate } } }),
-      prisma.workspace.count({ where: { createdAt: { gte: previousStartDate, lt: startDate } } })
+    // --- 2. WORKSPACE & USER METRICS ---
+    const [totalWorkspaces, newWorkspaceCount, totalUsers, newUsersCount, prevNewUsersCount] = await Promise.all([
+      prisma.workspace.count(),
+      prisma.workspace.count({ where: { createdAt: { gte: startDate, lt: now } } }),
+      prisma.user.count({ where: { isBlacklisted: false } }),
+      prisma.user.count({ where: { createdAt: { gte: startDate, lt: now } } }),
+      prisma.user.count({ where: { createdAt: { gte: previousStartDate, lt: startDate } } })
     ]);
-    
-    // Find absolute base to calculate true relative context growth
-    const totalWorkspacesBeforeStart = await prisma.workspace.count({ where: { createdAt: { lt: startDate } } });
-    const wsTrendResult = this.calculateTrend(currentWorkspaces, totalWorkspacesBeforeStart || 1);
+    const userTrendResult = this.calculateTrend(newUsersCount, prevNewUsersCount);
+    const wsTrendResult = this.calculateTrend(newWorkspaceCount, await prisma.workspace.count({ where: { createdAt: { gte: previousStartDate, lt: startDate } } }));
 
     // --- 3. DATASETS EXPORTED (Unlocked Leads Total Volumes) ---
     const [currentExports, prevExports] = await Promise.all([
-      prisma.unlockedLead.count({ where: { unlockedAt: { gte: startDate } } }),
+      prisma.unlockedLead.count({ where: { unlockedAt: { gte: startDate, lt: now } } }),
       prisma.unlockedLead.count({ where: { unlockedAt: { gte: previousStartDate, lt: startDate } } })
     ]);
     const exportTrendResult = this.calculateTrend(currentExports, prevExports);
 
     // --- 4. OPEN SUPPORT TICKETS ---
-    const openTicketsCount = await prisma.supportTicket.count({
-      where: { status: { in: ['OPEN', 'REVIEWING'] } }
-    });
-    const totalTicketsEver = await prisma.supportTicket.count();
+    const [openTicketsCount, prevOpenTicketsCount, totalTicketsEver] = await Promise.all([
+      prisma.supportTicket.count({ where: { status: { in: ['OPEN', 'REVIEWING'] } } }),
+      prisma.supportTicket.count({ where: { status: { in: ['OPEN', 'REVIEWING'] }, createdAt: { gte: previousStartDate, lt: startDate } } }),
+      prisma.supportTicket.count()
+    ]);
+    const ticketsTrendResult = this.calculateTrend(openTicketsCount, prevOpenTicketsCount);
 
     // --- 5. SYSTEM HEALTH VIA DYNAMIC INJECTION ENGINE ---
-    // Reads platform branding strings and configurations dynamically out of the global settings
     const settings = await prisma.globalSettings.findUnique({ where: { id: 'singleton' } });
-    
     const systemHealth = [
       { service: 'Main API Gateway', status: settings?.maintenanceMode ? 'Degraded' : 'Operational', uptime: '99.99%', icon: 'Server' },
-      { service: 'SMTP Validation Engine', status: 'Operational', uptime: '99.95%', icon: 'Mail' },
-      { service: 'Payment Processor (Stripe)', status: settings?.secretKey ? 'Operational' : 'Degraded', uptime: '99.90%', icon: 'DollarSign' },
-      { service: 'Data enrichment Sync', status: 'Operational', uptime: '100%', icon: 'Zap' },
+      { service: 'SMTP Delivery', status: settings?.secretKey ? 'Operational' : 'Degraded', uptime: '99.95%', icon: 'Mail' },
+      { service: 'Payment Processor', status: settings?.secretKey ? 'Operational' : 'Degraded', uptime: '99.90%', icon: 'DollarSign' },
+      { service: 'Data Enrichment', status: 'Operational', uptime: '100%', icon: 'Zap' }
     ];
 
     // --- 6. GLOBAL ACTIVITY AUDIT TRAIL ---
@@ -97,48 +96,44 @@ export const DashboardService = {
       orderBy: { createdAt: 'desc' }
     });
 
-    // Resolve structural details from target entity IDs cleanly
-    const activities = await Promise.all(
-      rawLogs.map(async (log) => {
-        const metadata = log.metadata as any;
-        
-        const userDetails = await prisma.user.findUnique({
-          where: { id: log.userId },
-          select: { email: true }
-        });
+    const userIds = [...new Set(rawLogs.map(log => log.userId))].filter(Boolean);
+    const userList = userIds.length > 0 ? await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, email: true }
+    }) : [];
+    const userMap = new Map(userList.map(user => [user.id, user.email]));
 
-        // Compute relative timing manually for local compatibility
-        const minutesDiff = Math.floor((Date.now() - log.createdAt.getTime()) / 60000);
-        let timeString = `${minutesDiff} mins ago`;
-        if (minutesDiff >= 60) {
-          const hours = Math.floor(minutesDiff / 60);
-          timeString = hours === 1 ? '1 hour ago' : `${hours} hours ago`;
-          if (hours >= 24) {
-            timeString = `${Math.floor(hours / 24)} days ago`;
-          }
-        }
-        if (minutesDiff < 1) timeString = 'Just now';
+    const activities = rawLogs.map((log) => {
+      const metadata = log.metadata as any;
+      const email = userMap.get(log.userId) || 'system_auto';
+      const minutesDiff = Math.floor((Date.now() - log.createdAt.getTime()) / 60000);
+      let timeString = `${minutesDiff} mins ago`;
+      if (minutesDiff < 1) timeString = 'Just now';
+      else if (minutesDiff >= 60) {
+        const hours = Math.floor(minutesDiff / 60);
+        timeString = hours === 1 ? '1 hour ago' : `${hours} hours ago`;
+        if (hours >= 24) timeString = `${Math.floor(hours / 24)} days ago`;
+      }
 
-        return {
-          id: log.id,
-          user: userDetails?.email || 'system_auto',
-          action: this.formatActionText(log.action, metadata),
-          time: timeString,
-          amount: metadata?.amountPaid ? Number(metadata.amountPaid) : null,
-          status: log.action === 'PAYMENT_CONFIRMED' ? 'Completed' : 'System'
-        };
-      })
-    );
+      return {
+        id: log.id,
+        user: email,
+        action: this.formatActionText(log.action, metadata),
+        time: timeString,
+        amount: metadata?.amountPaid ? Number(metadata.amountPaid) : null,
+        status: log.action === 'PAYMENT_CONFIRMED' ? 'Completed' : 'System'
+      };
+    });
 
-    // --- 7. REAL CHART STATISTICAL GENERATION ---
-    const chart = await this.generateChartData(timeRange, startDate);
+    const chart = await this.generateChartData(timeRange, startDate, now);
 
     return {
       kpis: [
         { label: `Revenue (${timeRange})`, value: `£${revCurrent.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, trend: revTrendResult.trend, isUp: revTrendResult.isUp, icon: 'DollarSign' },
-        { label: 'Active Workspaces', value: (totalWorkspacesBeforeStart + currentWorkspaces).toString(), trend: wsTrendResult.trend, isUp: wsTrendResult.isUp, icon: 'Users' },
+        { label: 'Total Workspaces', value: totalWorkspaces.toString(), trend: wsTrendResult.trend, isUp: wsTrendResult.isUp, icon: 'Users' },
+        { label: `New Signups (${timeRange})`, value: newUsersCount.toString(), trend: userTrendResult.trend, isUp: userTrendResult.isUp, icon: 'Activity' },
         { label: 'Datasets Exported', value: currentExports.toLocaleString('en-GB'), trend: exportTrendResult.trend, isUp: exportTrendResult.isUp, icon: 'Database' },
-        { label: 'Support Tickets', value: openTicketsCount.toString(), trend: `Total: ${totalTicketsEver}`, isUp: openTicketsCount === 0, icon: 'AlertTriangle' }
+        { label: 'Support Tickets', value: openTicketsCount.toString(), trend: ticketsTrendResult.trend, isUp: openTicketsCount === 0, icon: 'AlertTriangle' }
       ],
       chart,
       activities,
@@ -165,61 +160,76 @@ export const DashboardService = {
   /**
    * Groups completed revenue numbers directly by intervals into chronological bars
    */
-  async generateChartData(range: string, startDate: Date) {
+  async generateChartData(range: string, startDate: Date, endDate: Date) {
     const completedInvoices = await prisma.invoice.findMany({
-      where: { status: 'COMPLETED', date: { gte: startDate } },
+      where: { status: 'COMPLETED', date: { gte: startDate, lt: endDate } },
       select: { amount: true, date: true },
       orderBy: { date: 'asc' }
     });
 
     if (range === '24H') {
       const bars = Array.from({ length: 6 }, (_, i) => {
-        const h = new Date();
-        h.setHours(h.getHours() - (5 - i) * 4);
-        return { label: `${String(h.getHours()).padStart(2, '0')}:00`, rawSum: 0, value: 0 };
+        const hour = new Date(endDate.getTime() - (5 - i) * 4 * 60 * 60 * 1000);
+        return { label: `${String(hour.getHours()).padStart(2, '0')}:00`, rawSum: 0, value: 0 };
       });
-      
+
       completedInvoices.forEach(inv => {
-        const hour = inv.date.getHours();
-        const index = Math.min(Math.floor(hour / 4), 5);
+        const index = Math.min(Math.floor(inv.date.getHours() / 4), 5);
         bars[index].rawSum += Number(inv.amount);
       });
 
-      return this.normalizeChartScale(bars);
+      return this.normalizeChartScale(bars).map(b => ({ ...b, amount: b.rawSum }));
     }
 
     if (range === '7D') {
-      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const order = Array.from({ length: 7 }, (_, i) => {
-        const d = new Date();
-        d.setDate(d.getDate() - (6 - i));
-        return days[d.getDay()];
+      const labels = Array.from({ length: 7 }, (_, i) => {
+        const day = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate() - (6 - i));
+        return { label: day.toLocaleDateString('en-GB', { weekday: 'short' }), date: day };
       });
 
-      const bars = order.map(label => ({ label, rawSum: 0, value: 0 }));
+      const bars = labels.map(({ label }) => ({ label, rawSum: 0, value: 0 }));
       
       completedInvoices.forEach(inv => {
-        const dayLabel = days[inv.date.getDay()];
+        const dayLabel = inv.date.toLocaleDateString('en-GB', { weekday: 'short' });
         const idx = bars.findIndex(b => b.label === dayLabel);
         if (idx !== -1) bars[idx].rawSum += Number(inv.amount);
       });
 
-      return this.normalizeChartScale(bars);
+      return this.normalizeChartScale(bars).map(b => ({ ...b, amount: b.rawSum }));
     }
 
-    // Default macro fallback bounds if dataset entries span months (30D & YTD)
-    const defaults: Record<string, { label: string; value: number }[]> = {
-      '30D': [
-        { label: 'Week 1', value: 40 }, { label: 'Week 2', value: 60 },
-        { label: 'Week 3', value: 45 }, { label: 'Week 4', value: 75 }
-      ],
-      'YTD': [
-        { label: 'Jan', value: 30 }, { label: 'Feb', value: 45 }, { label: 'Mar', value: 60 },
-        { label: 'Apr', value: 55 }, { label: 'May', value: 80 }, { label: 'Jun', value: 95 }
-      ]
-    };
+    if (range === '30D') {
+      const labels = Array.from({ length: 30 }, (_, i) => {
+        const day = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate() - (29 - i));
+        return { label: day.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }), date: day };
+      });
+      const bars = labels.map(({ label }) => ({ label, rawSum: 0, value: 0 }));
 
-    return defaults[range] || [];
+      completedInvoices.forEach(inv => {
+        const idx = Math.floor((inv.date.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
+        if (idx >= 0 && idx < bars.length) bars[idx].rawSum += Number(inv.amount);
+      });
+
+      return this.normalizeChartScale(bars).map(b => ({ ...b, amount: b.rawSum }));
+    }
+
+    if (range === 'YTD') {
+      const lastMonth = endDate.getMonth();
+      const bars = Array.from({ length: lastMonth + 1 }, (_, i) => ({
+        label: new Date(endDate.getFullYear(), i, 1).toLocaleString('en-GB', { month: 'short' }),
+        rawSum: 0,
+        value: 0
+      }));
+
+      completedInvoices.forEach(inv => {
+        const idx = inv.date.getMonth();
+        if (idx >= 0 && idx < bars.length) bars[idx].rawSum += Number(inv.amount);
+      });
+
+      return this.normalizeChartScale(bars).map(b => ({ ...b, amount: b.rawSum }));
+    }
+
+    return [];
   },
 
   /**
@@ -229,7 +239,8 @@ export const DashboardService = {
     const maxVal = Math.max(...bars.map(b => b.rawSum), 0);
     return bars.map(b => ({
       label: b.label,
-      value: maxVal === 0 ? 10 : Math.max(Math.floor((b.rawSum / maxVal) * 100), 12) // Ensures zero elements don't look completely flat
+      value: maxVal === 0 ? 10 : Math.max(Math.floor((b.rawSum / maxVal) * 100), 12),
+      rawSum: b.rawSum
     }));
   }
 };

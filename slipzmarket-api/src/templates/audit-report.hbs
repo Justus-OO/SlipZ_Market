@@ -1,0 +1,28 @@
+<div class="header" style="border-left: 5px solid #059669;">
+  <h1 style="color: #059669;">Data Verification Audit</h1>
+  <p>Quality assurance report for: {{invoiceId}}</p>
+</div>
+
+<div class="stat-card" style="background: #ecfdf5; border-color: #a7f3d0;">
+  <h3>Verification Score: {{qualityScore}}%</h3>
+  <p>We verified {{totalLeads}} contacts. {{verifiedCount}} passed the SMTP delivery check.</p>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Contact</th>
+      <th>Email Status</th>
+      <th>Phone Validated</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each leads}}
+    <tr>
+      <td>{{this.firstName}} {{this.lastName}}</td>
+      <td>{{#if this.emailValid}} ✅ Valid {{else}} ❌ Risky {{/if}}</td>
+      <td>{{#if this.phoneValid}} ✅ Valid {{else}} ❌ Unverified {{/if}}</td>
+    </tr>
+    {{/each}}
+  </tbody>
+</table>

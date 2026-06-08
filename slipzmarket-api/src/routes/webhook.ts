@@ -60,13 +60,23 @@ router.post('/stripe', express.raw({ type: 'application/json' }), async (req: Re
           return res.json({ received: true, status: 'blacklisted_user_blocked' });
         }
       }
+
+      // 0.5. CALCULATE TOTAL LEADS BOUGHT FROM CART ITEMS
+      const cartItems = await prisma.cartItem.findMany({
+        where: { userId },
+        include: { package: true }
+      });
+      const totalLeadsBought = cartItems.reduce((sum, item) => sum + (item.package.leadsCount * item.quantity), 0);
+      console.log(`📦 Total leads to be credited: ${totalLeadsBought}`);
       
       // 1. Process the order via our upgraded CheckoutService
       const result = await CheckoutService.completeOrder(
         userId,
         paymentIntent.metadata.workspaceId,
         paymentIntent.id,
-        Number(paymentIntent.amount) / 100
+        Number(paymentIntent.amount) / 100,
+        paymentIntent.metadata?.billingDetails,
+        totalLeadsBought
       );
 
       // 2. Prevent duplicate emails (Idempotency)

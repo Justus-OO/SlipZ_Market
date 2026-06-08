@@ -9,7 +9,7 @@ const router = Router();
 router.get('/', requireAuth, CoreService.catchAsync(async (req: any, res: Response) => {
   const items = await prisma.cartItem.findMany({
     where: { userId: req.user.userId },
-    include: { package: true } // Fetches the actual package details
+    include: { package: true } // Automatically fetches the new includesEmail/includesPhone flags
   });
   return CoreService.success(res, 200, 'Cart retrieved', { items });
 }));
@@ -24,15 +24,23 @@ router.post('/add', requireAuth, CoreService.catchAsync(async (req: any, res: Re
   }
 
   const existing = await prisma.cartItem.findFirst({ where: { userId, packageId } });
+  
   if (existing) {
     const updated = await prisma.cartItem.update({
       where: { id: existing.id },
-      data: { quantity: existing.quantity + Number(quantity) }
+      data: { quantity: existing.quantity + Number(quantity) },
+      // 👈 NEW: Include package details so the frontend gets the flags instantly
+      include: { package: true } 
     });
     return CoreService.success(res, 200, 'Cart updated', { cart: updated });
   }
 
-  const item = await prisma.cartItem.create({ data: { userId, packageId, quantity: Number(quantity) } });
+  const item = await prisma.cartItem.create({ 
+    data: { userId, packageId, quantity: Number(quantity) },
+    // 👈 NEW: Include package details so the frontend gets the flags instantly
+    include: { package: true }
+  });
+  
   return CoreService.success(res, 201, 'Added to cart', { cart: item });
 }));
 
@@ -57,7 +65,7 @@ router.patch('/:id', requireAuth, CoreService.catchAsync(async (req: any, res: R
 
   const item = await prisma.cartItem.findUnique({
     where: { id },
-    include: { package: true }
+    include: { package: true } // Flags are fetched here
   });
 
   return CoreService.success(res, 200, 'Quantity updated', { cart: item });

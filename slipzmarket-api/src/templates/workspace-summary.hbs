@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; line-height: 1.6; }
+    
+    /* Header Layout */
+    .top-section { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #800000; padding-bottom: 20px; margin-bottom: 30px; }
+    .logo { width: 150px; height: auto; }
+    .company-details { text-align: right; font-size: 12px; color: #555; }
+    
+    /* Title Section */
+    .title-box { background: #f9fafb; padding: 15px; border-left: 4px solid #800000; margin-bottom: 20px; }
+    h1 { margin: 0; color: #800000; font-size: 20px; }
+    
+    /* Data Grid */
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th { background-color: #800000; color: white; padding: 12px; text-align: left; font-size: 11px; text-transform: uppercase; }
+    td { border-bottom: 1px solid #e8e2e2; padding: 12px; font-size: 12px; }
+    tr:nth-child(even) { background-color: #fafafa; }
+    
+    /* Data Highlights */
+    .highlight { display: flex; gap: 20px; margin-bottom: 20px; }
+    .stat-card { flex: 1; padding: 10px; border: 1px solid #e8e2e2; border-radius: 8px; background: #fff; }
+    
+    .footer { position: fixed; bottom: 0; width: 100%; text-align: center; font-size: 10px; color: #999; border-top: 1px solid #eee; padding-top: 10px; }
+  </style>
+</head>
+<body>
+
+  <div class="top-section">
+    <img src="https://your-domain.com/logo.png" alt="Company Logo" class="logo">
+    <div class="company-details">
+      <strong style="color: #2a1b1b; font-size: 14px;">SlipZMarket Analytics</strong><br>
+      Nairobi, Kenya<br>
+      support@slipzmarket.com<br>
+      www.slipzmarket.com
+    </div>
+  </div>
+
+  <div class="title-box">
+    <h1>{{title}}</h1>
+    <div style="font-size: 12px; color: #7a6b6b;">
+      Generated for: <strong>{{userName}}</strong> | Date: {{date}} | Workspace: {{workspaceName}}
+    </div>
+  </div>
+
+  <div class="highlight">
+    <div class="stat-card">
+      <div style="font-size: 10px; text-transform: uppercase; color: #800000; font-weight: bold;">Total Leads</div>
+      <div style="font-size: 18px; font-weight: bold;">{{totalLeads}}</div>
+    </div>
+    <div class="stat-card">
+      <div style="font-size: 10px; text-transform: uppercase; color: #800000; font-weight: bold;">Data Source</div>
+      <div style="font-size: 18px; font-weight: bold;">Master DB</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Prospect Name</th>
+        <th>Job Title</th>
+        <th>Company</th>
+        <th>Email</th>
+        <th>Location</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each leads}}
+      <tr>
+        <td><strong>{{this.firstName}} {{this.lastName}}</strong></td>
+        <td>{{this.jobTitle}}</td>
+        <td>{{this.companyName}}</td>
+        <td style="color: #800000;">{{this.email}}</td>
+        <td>{{this.country}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <p>This document is electronically generated and is property of SlipZMarket. | Page 1 of 1</p>
+  </div>
+
+</body>
+</html>

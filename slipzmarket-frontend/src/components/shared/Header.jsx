@@ -205,6 +205,47 @@ const Header = () => {
     navigate('/auth');
   }, [closeDropdowns, navigate]);
 
+  const getNotificationVariant = (type) => {
+    switch (type) {
+      case 'SUCCESS':
+        return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+      case 'WARNING':
+        return 'bg-amber-100 text-amber-700 border-amber-200';
+      case 'ERROR':
+        return 'bg-red-100 text-red-700 border-red-200';
+      case 'MESSAGE':
+        return 'bg-slate-100 text-slate-700 border-slate-200';
+      default:
+        return 'bg-sky-100 text-sky-700 border-sky-200';
+    }
+  };
+
+  const markAllNotificationsRead = async () => {
+    try {
+      await axios.put(`${API_URL}/notifications/read-all`, {}, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('slipz_token')}` },
+      });
+      setNotifications((prev) => prev.map((notif) => ({ ...notif, isRead: true })));
+      setUnreadCount(0);
+    } catch (error) {
+      console.error('Failed to mark notifications read:', error);
+    }
+  };
+
+  const toggleNotificationRead = async (notification) => {
+    if (notification.isRead) return;
+
+    try {
+      await axios.put(`${API_URL}/notifications/${notification.id}/toggle-read`, { isRead: true }, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('slipz_token')}` },
+      });
+      setNotifications((prev) => prev.map((item) => item.id === notification.id ? { ...item, isRead: true } : item));
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('Failed to update notification status:', error);
+    }
+  };
+
   useEffect(() => {
     const token = localStorage.getItem('slipz_token');
 
@@ -256,7 +297,7 @@ const Header = () => {
           headers: { Authorization: `Bearer ${token}` },
         });
         setNotifications(res.data.data || []);
-        setUnreadCount((res.data.data || []).filter((n) => !n.isRead).length);
+        setUnreadCount(typeof res.data.unreadCount === 'number' ? res.data.unreadCount : (res.data.data || []).filter((n) => !n.isRead).length);
       } catch (error) {
         console.error('Failed to load notifications:', error);
       }
@@ -375,33 +416,48 @@ const Header = () => {
 </button>
 
 {activeDropdown === 'notifications' && (
-  <div className="absolute -right-5 top-full mt-4 flex w-80 flex-col overflow-hidden rounded-xl border border-theme bg-surface shadow-lg animate-fade-in-up">
+  <div className="absolute -right-5 top-full mt-4 flex w-80 flex-col overflow-hidden rounded-xl border border-theme bg-surface shadow-xl animate-fade-in-up">
     <div className="flex items-center justify-between border-b border-theme bg-app px-4 py-3">
-      <span className="text-[14px] font-bold text-primary">{t('notifications')}</span>
-      <button 
-        type="button" 
-        onClick={async () => {
-          await axios.put(`${API_URL}/notifications/read-all`, {}, { 
-            headers: { Authorization: `Bearer ${localStorage.getItem('slipz_token')}` } 
-          });
-          setNotifications(notifications.map(n => ({ ...n, isRead: true })));
-          setUnreadCount(0);
-        }}
+      <div>
+        <span className="text-[14px] font-bold text-primary">{t('notifications')}</span>
+        <p className="text-[11px] text-muted">{unreadCount} unread</p>
+      </div>
+      <button
+        type="button"
+        onClick={markAllNotificationsRead}
         className="text-[11px] font-bold text-muted hover:underline"
       >
         {t('markAllRead')}
       </button>
     </div>
-    <div className="max-h-75 overflow-y-auto">
+    <div className="max-h-80 overflow-y-auto">
       {notifications.length > 0 ? notifications.map((n) => (
-        <div key={n.id} className={`p-4 border-b border-theme cursor-pointer ${!n.isRead ? 'bg-surface' : 'opacity-70'}`}>
-          <div className="flex justify-between mb-1">
-            <h4 className="text-[13px] font-bold text-primary">{n.title}</h4>
-            <span className="text-[10px] text-muted">{new Date(n.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+        <button
+          key={n.id}
+          type="button"
+          onClick={() => {
+            toggleNotificationRead(n);
+            if (n.link) window.open(n.link, '_blank');
+          }}
+          className={`w-full p-4 text-left transition-colors ${!n.isRead ? 'bg-surface' : 'bg-app/60'} ${n.link ? 'hover:bg-app/80' : 'hover:bg-app/60'}`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full border px-2 py-1 text-[10px] font-bold ${getNotificationVariant(n.type)}`}>
+                  {n.type || 'INFO'}
+                </span>
+                <span className="text-[12px] text-muted">{new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+              <h4 className={`text-[13px] font-bold ${n.isRead ? 'text-primary/80' : 'text-primary'}`}>{n.title}</h4>
+            </div>
+            {!n.isRead && <span className="h-2 w-2 rounded-full bg-accent" />}
           </div>
-          <p className="text-[12px] text-primary opacity-80">{n.message}</p>
-        </div>
-      )) : <p className="p-4 text-center text-[12px] text-muted">No new notifications</p>}
+          <p className="mt-2 text-[12px] text-primary opacity-80">{n.message}</p>
+        </button>
+      )) : (
+        <p className="p-4 text-center text-[12px] text-muted">No notifications yet</p>
+      )}
     </div>
   </div>
 )}

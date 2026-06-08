@@ -8,7 +8,7 @@ import {
   Database as DatabaseIcon, MoreHorizontal, 
   ArrowRight, Mail, Phone, Zap, X, FolderPlus, Building2,
   CheckCircle2, Folder, Check, Loader2,
-  LogOut, CreditCard, ChevronDown, User as UserIcon
+  LogOut, CreditCard, ChevronDown, User as UserIcon, Lock
 } from 'lucide-react';
 
 const Dashboard = () => {
@@ -39,6 +39,8 @@ const Dashboard = () => {
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [newListName, setNewListName] = useState('');
+  const [saveMode, setSaveMode] = useState('new');
+  const [existingListId, setExistingListId] = useState('');
   const [folderLoading, setFolderLoading] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [selectedProspects, setSelectedProspects] = useState(() => {
@@ -49,6 +51,26 @@ const Dashboard = () => {
       return [];
     }
   });
+  const [notification, setNotification] = useState(null);
+  const notificationTimeoutRef = useRef(null);
+
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type });
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+    }
+    notificationTimeoutRef.current = window.setTimeout(() => {
+      setNotification(null);
+    }, 5000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (notificationTimeoutRef.current) {
+        clearTimeout(notificationTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // --- PROSPECT SEARCH STATE ---
   const [searchFilters, setSearchFilters] = useState({
@@ -59,6 +81,7 @@ const Dashboard = () => {
     maxSize: ''
   });
   const [searchResults, setSearchResults] = useState(null);
+  const [searchPermissions, setSearchPermissions] = useState({ canViewEmail: false, canViewPhone: false });
   const [isSearchingProspects, setIsSearchingProspects] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const resultsPerPage = 20;
@@ -83,6 +106,7 @@ const Dashboard = () => {
         const statsRes = await axios.get(`${API_URL}/dashboard/stats`, {
           headers: { Authorization: `Bearer ${token}` }
         });
+        console.log('📊 Stats from backend:', statsRes.data.data);
         setStats(statsRes.data.data);
         setUser(prev => (prev ? { ...prev, ...statsRes.data.data } : statsRes.data.data));
 
@@ -117,12 +141,32 @@ const Dashboard = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Reset search state when modal opens
+  useEffect(() => {
+    if (isGlobalSearchOpen) {
+      setIsSearchingProspects(false);
+    }
+  }, [isGlobalSearchOpen]);
+
   const filteredLists = useMemo(() => {
     return lists.filter(list => 
       list.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       list.status.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [lists, searchQuery]);
+
+  const paginatedResults = useMemo(() => {
+    if (!Array.isArray(searchResults)) return [];
+    const start = (currentPage - 1) * resultsPerPage;
+    return searchResults.slice(start, start + resultsPerPage);
+  }, [searchResults, currentPage]);
+
+  const totalPages = useMemo(() => {
+    return Math.max(1, Math.ceil((searchResults?.length || 0) / resultsPerPage));
+  }, [searchResults]);
+
+  const currentPageStartIndex = (currentPage - 1) * resultsPerPage;
+  const currentPageEndIndex = currentPageStartIndex + resultsPerPage;
 
   const handleSelectAll = (e) => {
     if (e.target.checked) setSelectedLists(filteredLists.map(list => list.id));
@@ -133,29 +177,80 @@ const Dashboard = () => {
     setSelectedLists(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
 
+  // --- NAME MASKING UTILITY ---
+  const maskName = (name) => {
+    if (!name) return '';
+    const str = String(name);
+    if (str.length <= 2) return str[0] + '*';
+    return str[0] + '*'.repeat(str.length - 2) + str[str.length - 1];
+  };
+
 const executeProspectSearch = async () => {
-  // Proactive UI gate: block searches when user has no remaining credits
-  const creditsRemaining = stats ? (stats.exportCreditsTotal - stats.exportCreditsUsed) : 0;
-  if (creditsRemaining <= 0) {
-    alert('You have no remaining prospect credits. Please purchase more to continue searching.');
+  console.log('🔵 Button clicked!');
+  const token = localStorage.getItem('slipz_token');
+  const remainingCredits = stats ? (stats.exportCreditsTotal - stats.exportCreditsUsed) : 0;
+
+  console.log('🔵 Token:', token ? 'exists' : 'missing');
+  console.log('🔵 Credits:', remainingCredits);
+
+  if (!token) {
+    showNotification('Your session has expired. Please sign in again.', 'warning');
+    handleLogout();
     return;
   }
 
+  if (remainingCredits <= 0) {
+    console.log('🔴 No credits, stopping');
+    showNotification('You have no remaining prospect credits. Please purchase more to unlock paid leads.', 'warning');
+    return;
+  }
+
+  console.log('🟢 Setting isSearchingProspects to true');
   setIsSearchingProspects(true);
-  const token = localStorage.getItem('slipz_token');
-  
+
   try {
+    console.log('🟢 Making API call with filters:', searchFilters);
     const res = await axios.post(`${API_URL}/datasets/search`, searchFilters, {
       headers: { Authorization: `Bearer ${token}` }
     });
-    // Ensure we are getting the array directly
-    setSearchResults(res.data.data || []);
-    setCurrentPage(1); // Reset to page 1 on new search
+
+    console.log('🟢 API response received:', res.data);
+    // 2. ROBUST PAYLOAD HANDLING
+    // Support both direct data arrays and wrapped payloads.
+    const payload = res.data || {};
+    const results = Array.isArray(payload.data)
+      ? payload.data
+      : Array.isArray(payload)
+      ? payload
+      : [];
+
+    console.log('🟢 Results found:', results.length);
+    setSearchResults(results);
+    setSearchPermissions(payload.permissions || { canViewEmail: false, canViewPhone: false });
+    setCurrentPage(1);
+
+    // 3. UI FEEDBACK
+    if (results.length === 0) {
+      console.warn("No results returned from server.");
+    }
   } catch (error) {
-    console.error("Search API failed:", error);
-    setSearchResults([]); 
+    console.error("🔴 Search API failed:", error);
+    setSearchResults([]);
+
+    if (error.response?.status === 401) {
+      handleLogout();
+      return;
+    }
+
+    const serverMessage = error.response?.data?.error || error.response?.data?.message;
+    if (error.response?.status === 403) {
+      showNotification(serverMessage || 'You have no remaining prospect credits. Please purchase more to unlock paid leads.', 'warning');
+    } else {
+      showNotification(serverMessage || 'Failed to connect to the search engine. Please try again.', 'error');
+    }
   } finally {
-    setIsSearchingProspects(false); 
+    console.log('🟢 Setting isSearchingProspects to false');
+    setIsSearchingProspects(false);
   }
 };
 
@@ -178,7 +273,12 @@ const executeProspectSearch = async () => {
     if (!searchResults || searchResults.length === 0) return;
     setSelectedProspects(prev => {
       const map = new Map(prev.map(p => [p.id, p]));
-      searchResults.forEach(s => map.set(s.id, s));
+      // Only grab currently visible page results or all? Let's assume the paginated view handles "visible"
+      const startIdx = (currentPage - 1) * resultsPerPage;
+      const endIdx = startIdx + resultsPerPage;
+      const visibleResults = searchResults.slice(startIdx, endIdx);
+      
+      visibleResults.forEach(s => map.set(s.id, s));
       return Array.from(map.values());
     });
   };
@@ -197,6 +297,7 @@ const executeProspectSearch = async () => {
     setSearchResults(null);
     setCurrentPage(1);
     setSearchFilters({ jobTitle: '', industry: 'All', location: '', minSize: '', maxSize: '' });
+    setIsSearchingProspects(false);
   };
 
   // --- FOLDER CREATION ---
@@ -215,55 +316,105 @@ const executeProspectSearch = async () => {
       
       setIsFolderModalOpen(false);
       setNewFolderName('');
-      alert(`Folder "${newFolderName}" created successfully!`);
+      showNotification(`Folder "${newFolderName}" created successfully!`, 'success');
     } catch (error) {
       console.error("Error creating folder:", error);
-      alert(error.response?.data?.error || "Failed to create folder");
+      showNotification(error.response?.data?.error || "Failed to create folder", 'error');
     } finally {
       setFolderLoading(false);
     }
   };
 
-  const handleSaveToNewList = async (e) => {
+  const handleSaveList = async (e) => {
     e.preventDefault();
-    if (!newListName.trim()) {
-      alert('Please enter a list name.');
+
+    const countToSave = (selectedProspects && selectedProspects.length > 0)
+      ? selectedProspects.length
+      : (searchResults?.length ?? 0);
+
+    if (countToSave <= 0) {
+      showNotification('No prospects selected to save.', 'warning');
+      return;
+    }
+
+    if (saveMode === 'new' && !newListName.trim()) {
+      showNotification('Please enter a list name.', 'warning');
+      return;
+    }
+
+    if (saveMode === 'existing' && !existingListId) {
+      showNotification('Please choose an existing list.', 'warning');
+      return;
+    }
+
+    const remainingCredits = stats ? (stats.exportCreditsTotal - stats.exportCreditsUsed) : 0;
+    if (countToSave > remainingCredits) {
+      showNotification('You do not have enough credits to save this list.', 'warning');
       return;
     }
 
     setListLoading(true);
     const token = localStorage.getItem('slipz_token');
 
-    // Determine how many contacts we're actually saving (selected overrides visible)
-    const countToSave = (selectedProspects && selectedProspects.length > 0) ? selectedProspects.length : (searchResults?.length ?? 0);
+    const selectedLeadIds = (selectedProspects && selectedProspects.length > 0)
+      ? selectedProspects.map(p => p.id)
+      : (searchResults || []).map(p => p.id);
+
+    const uniqueSelectedLeadIds = Array.from(new Set(selectedLeadIds.filter(id => typeof id === 'string' && id.trim() !== '')));
+    const selectedLeadCount = uniqueSelectedLeadIds.length;
+
+    if (selectedLeadCount === 0) {
+      showNotification('No prospects are available to save.', 'warning');
+      setListLoading(false);
+      return;
+    }
+
+    const payload = {
+      selectedLeadIds: uniqueSelectedLeadIds,
+      contactCount: selectedLeadCount,
+      dataType: 'Email & Phone'
+    };
+
+    if (saveMode === 'new') {
+      payload.name = newListName.trim();
+    } else {
+      payload.listId = existingListId;
+    }
+
+    console.log('📤 Saving list with payload:', JSON.stringify(payload, null, 2));
+    console.log('🔗 API URL:', `${API_URL}/dashboard/lists`);
 
     try {
-      await axios.post(`${API_URL}/dashboard/lists`,
-        {
-          name: newListName,
-          contactCount: countToSave,
-          dataType: 'Email & Phone'
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await axios.post(`${API_URL}/dashboard/lists`, payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
       const listsRes = await axios.get(`${API_URL}/dashboard/lists`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setLists(listsRes.data.data);
 
-      // Optimistically update local stats to reflect credits spent
       setStats(prev => ({ ...prev, exportCreditsUsed: (prev?.exportCreditsUsed || 0) + countToSave }));
 
       setIsSaveListModalOpen(false);
       setNewListName('');
-      // Clear selection after successful save
+      setExistingListId('');
+      setSaveMode('new');
       setSelectedProspects([]);
       try { sessionStorage.removeItem('selected_prospects'); } catch (err) { void err; }
-      alert(`List "${newListName}" saved successfully!`);
+      showNotification(
+        saveMode === 'new'
+          ? `List "${newListName}" saved successfully!`
+          : 'Prospects added to the existing list successfully!',
+        'success'
+      );
     } catch (error) {
-      console.error("Error saving list:", error);
-      alert(error.response?.data?.error || "Failed to save list");
+      console.error("❌ Error saving list:", error);
+      if (error.response) {
+        console.error('📋 Response status:', error.response.status);
+        console.error('📋 Response data:', error.response.data);
+      }
+      showNotification(error.response?.data?.error || "Failed to save list", 'error');
     } finally {
       setListLoading(false);
     }
@@ -296,7 +447,7 @@ const executeProspectSearch = async () => {
       
     } catch (error) {
       console.error("Export error:", error);
-      alert("Export processing failed.");
+      showNotification("Export processing failed.", 'error');
     }
   };
 
@@ -311,9 +462,35 @@ const executeProspectSearch = async () => {
   const creditsRemaining = stats ? stats.exportCreditsTotal - stats.exportCreditsUsed : 0;
   const recentExports = exportHistory.slice(0, 4);
 
+  
+
+
   return (
     <div className="flex flex-col h-full min-h-screen bg-[#f9fafb] font-sans selection:bg-[#800000] selection:text-white pb-12">
-      
+      {notification && (
+        <div className="fixed right-4 top-4 z-[100002] w-full max-w-sm rounded-2xl shadow-xl border border-[#d8cdcd] bg-white px-4 py-3 text-sm font-medium text-[#2a1b1b] animate-fade-in-up">
+          <div className="flex items-center justify-between gap-3">
+            <span className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-bold uppercase tracking-wider ${
+              notification.type === 'error'
+                ? 'bg-red-100 text-red-700'
+                : notification.type === 'warning'
+                ? 'bg-amber-100 text-amber-800'
+                : 'bg-emerald-100 text-emerald-700'
+            }`}>
+              {notification.type === 'error' ? 'Error' : notification.type === 'warning' ? 'Warning' : 'Success'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setNotification(null)}
+              className="text-[#7a6b6b] hover:text-[#2a1b1b]"
+            >
+              ✕
+            </button>
+          </div>
+          <p className="mt-2 text-[13px] leading-relaxed">{notification.message}</p>
+        </div>
+      )}
+
       {/* --- WORKSPACE HEADER --- */}
       <div className="bg-white border-b border-[#d8cdcd] px-0 lg:px-0 pt-8 pb-0 relative z-40">
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-6 w-full">
@@ -698,7 +875,7 @@ const executeProspectSearch = async () => {
 
       {/* MODALS */}
       {isFilterModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-[#2a1b1b]/40 backdrop-blur-sm animate-fade-in" onClick={() => setIsFilterModalOpen(false)} />
           <div className="relative bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col animate-fade-in-up">
             <div className="flex items-center justify-between p-5 border-b border-[#e8e2e2]">
@@ -734,7 +911,7 @@ const executeProspectSearch = async () => {
       )}
 
       {isFolderModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-[#2a1b1b]/40 backdrop-blur-sm animate-fade-in" onClick={() => setIsFolderModalOpen(false)} />
           <form onSubmit={handleCreateFolder} className="relative bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col animate-fade-in-up">
             <div className="p-6">
@@ -754,19 +931,58 @@ const executeProspectSearch = async () => {
       )}
 
       {isSaveListModalOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-[#2a1b1b]/40 backdrop-blur-sm animate-fade-in" onClick={() => { setIsSaveListModalOpen(false); setNewListName(''); }} />
-          <form onSubmit={handleSaveToNewList} className="relative bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col animate-fade-in-up">
+        <div className="fixed inset-0 z-[100001] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-[#2a1b1b]/40 backdrop-blur-sm animate-fade-in" onClick={() => { setIsSaveListModalOpen(false); setNewListName(''); setExistingListId(''); setSaveMode('new'); }} />
+          <form onSubmit={handleSaveList} className="relative bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col animate-fade-in-up">
             <div className="p-6">
               <div className="w-12 h-12 bg-[#800000]/10 rounded-full flex items-center justify-center mb-4"><FolderPlus size={24} className="text-[#800000]" /></div>
               <h3 className="text-xl font-bold text-[#2a1b1b] mb-1">Save search results</h3>
-              <p className="text-[13px] text-[#7a6b6b] mb-5">Save {searchResults?.length ?? 0} prospect{(searchResults?.length ?? 0) === 1 ? '' : 's'} to a new list.</p>
-              <input type="text" autoFocus placeholder="e.g., Q4 Enterprise Outreach" value={newListName} onChange={(e) => setNewListName(e.target.value)} className="w-full px-4 py-3 border border-[#d8cdcd] rounded-lg text-[14px] font-medium outline-none focus:border-[#800000] focus:ring-1 focus:ring-[#800000] transition-all" required />
+              <p className="text-[13px] text-[#7a6b6b] mb-5">Save {selectedProspects.length > 0 ? selectedProspects.length : (searchResults?.length ?? 0)} prospect{(selectedProspects.length > 0 ? selectedProspects.length : (searchResults?.length ?? 0)) === 1 ? '' : 's'} to a new or existing list.</p>
+              <div className="grid gap-3 mb-4">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSaveMode('new')}
+                    className={`rounded-lg border px-3 py-2 text-[13px] font-bold transition-colors ${saveMode === 'new' ? 'bg-[#800000] text-white border-[#800000]' : 'bg-white text-[#2a1b1b] border-[#d8cdcd]'}`}
+                  >
+                    New list
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSaveMode('existing')}
+                    className={`rounded-lg border px-3 py-2 text-[13px] font-bold transition-colors ${saveMode === 'existing' ? 'bg-[#800000] text-white border-[#800000]' : 'bg-white text-[#2a1b1b] border-[#d8cdcd]'}`}
+                  >
+                    Existing list
+                  </button>
+                </div>
+                {saveMode === 'existing' ? (
+                  <select
+                    value={existingListId}
+                    onChange={(e) => setExistingListId(e.target.value)}
+                    className="w-full px-4 py-3 border border-[#d8cdcd] rounded-lg text-[14px] font-medium text-[#2a1b1b] outline-none focus:border-[#800000] focus:ring-1 focus:ring-[#800000] transition-all"
+                  >
+                    <option value="">Choose an existing list</option>
+                    {lists.map((list) => (
+                      <option key={list.id} value={list.id}>{list.name} ({list.count.toLocaleString()})</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="e.g., Q4 Enterprise Outreach"
+                    value={newListName}
+                    onChange={(e) => setNewListName(e.target.value)}
+                    className="w-full px-4 py-3 border border-[#d8cdcd] rounded-lg text-[14px] font-medium outline-none focus:border-[#800000] focus:ring-1 focus:ring-[#800000] transition-all"
+                    required={saveMode === 'new'}
+                  />
+                )}
+              </div>
             </div>
             <div className="p-5 border-t border-[#e8e2e2] bg-[#f9fafb] flex gap-3 justify-end">
-              <button type="button" onClick={() => { setIsSaveListModalOpen(false); setNewListName(''); }} className="px-5 py-2 text-[13px] font-bold text-[#7a6b6b] hover:text-[#2a1b1b] transition-colors">Cancel</button>
+              <button type="button" onClick={() => { setIsSaveListModalOpen(false); setNewListName(''); setExistingListId(''); setSaveMode('new'); }} className="px-5 py-2 text-[13px] font-bold text-[#7a6b6b] hover:text-[#2a1b1b] transition-colors">Cancel</button>
               <button type="submit" disabled={listLoading} className="bg-[#2a1b1b] hover:bg-[#1a1010] text-white px-5 py-2 rounded-lg text-[13px] font-bold shadow-sm transition-colors flex items-center gap-2">
-                {listLoading ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Save List
+                {listLoading ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {saveMode === 'new' ? 'Save List' : 'Add to List'}
               </button>
             </div>
           </form>
@@ -775,7 +991,7 @@ const executeProspectSearch = async () => {
 
       {/* --- FUNCTIONAL PROSPECT SEARCH MODAL --- */}
       {isGlobalSearchOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-10 sm:p-10">
+        <div className="fixed inset-0 z-[100000] flex items-start justify-center p-4 pt-10 sm:p-10">
           <div className="absolute inset-0 bg-[#2a1b1b]/80 backdrop-blur-sm animate-fade-in" onClick={closeGlobalSearch} />
           <div className="relative bg-white rounded-2xl w-full max-w-6xl h-[85vh] shadow-2xl overflow-hidden flex flex-col animate-fade-in-up">
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#e8e2e2] bg-[#f9fafb]">
@@ -801,23 +1017,23 @@ const executeProspectSearch = async () => {
                 </div>
                 <div>
                   <label className="text-[12px] font-bold text-[#7a6b6b] uppercase tracking-wider mb-2 block">Industry</label>
-<select 
-  value={searchFilters.industry}
-  onChange={(e) => setSearchFilters({...searchFilters, industry: e.target.value})}
-  className="w-full px-3 py-2 border border-[#d8cdcd] rounded-lg text-[13px] outline-none focus:border-[#800000]"
->
-  <option value="">All Industries</option>
-  <option value="Software Development">Software Development</option>
-  <option value="Consulting">Consulting</option>
-  <option value="Logistics">Logistics</option>
-  <option value="Finance">Finance</option>
-  <option value="Healthcare">Healthcare</option>
-  <option value="Manufacturing">Manufacturing</option>
-  <option value="Retail">Retail</option>
-  <option value="Real Estate">Real Estate</option>
-  <option value="Marketing & Advertising">Marketing & Advertising</option>
-  <option value="Education">Education</option>
-</select>
+                  <select 
+                    value={searchFilters.industry}
+                    onChange={(e) => setSearchFilters({...searchFilters, industry: e.target.value})}
+                    className="w-full px-3 py-2 border border-[#d8cdcd] rounded-lg text-[13px] outline-none focus:border-[#800000]"
+                  >
+                    <option value="">All Industries</option>
+                    <option value="Software Development">Software Development</option>
+                    <option value="Consulting">Consulting</option>
+                    <option value="Logistics">Logistics</option>
+                    <option value="Finance">Finance</option>
+                    <option value="Healthcare">Healthcare</option>
+                    <option value="Manufacturing">Manufacturing</option>
+                    <option value="Retail">Retail</option>
+                    <option value="Real Estate">Real Estate</option>
+                    <option value="Marketing & Advertising">Marketing & Advertising</option>
+                    <option value="Education">Education</option>
+                  </select>
                 </div>
                 <div>
                   <label className="text-[12px] font-bold text-[#7a6b6b] uppercase tracking-wider mb-2 block">Location</label>
@@ -851,10 +1067,14 @@ const executeProspectSearch = async () => {
                 <button 
                   onClick={executeProspectSearch}
                   disabled={isSearchingProspects}
-                  className="w-full bg-[#800000] text-white py-2.5 rounded-lg text-[13px] font-bold shadow-sm hover:bg-[#660000] transition-colors mt-auto flex justify-center items-center gap-2"
+                  className={`w-full py-2.5 rounded-lg text-[13px] font-bold shadow-sm transition-colors mt-auto flex justify-center items-center gap-2 ${
+                    isSearchingProspects 
+                      ? 'bg-[#d8cdcd] text-[#a09393] cursor-not-allowed' 
+                      : 'bg-[#800000] text-white hover:bg-[#660000]'
+                  }`}
                 >
                   {isSearchingProspects ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                  Apply Filters
+                  {isSearchingProspects ? 'Searching...' : 'Apply Filters'}
                 </button>
               </div>
 
@@ -872,6 +1092,25 @@ const executeProspectSearch = async () => {
                       <h3 className="text-[14px] font-bold text-[#2a1b1b]">Found {searchResults.length} prospects</h3>
                       <p className="text-[11px] text-[#7a6b6b]">Select contacts below to build your lead list.</p>
                     </div>
+
+                    {/* NEW: PACKAGE PERMISSIONS INDICATOR / UPSELL */}
+                    <div className="hidden md:flex items-center gap-4 bg-white border border-[#e8e2e2] px-3 py-1.5 rounded-lg shadow-sm">
+                       <span className="text-[11px] font-bold text-[#7a6b6b] uppercase tracking-wider">Unlocks:</span>
+                       <div className="flex items-center gap-1.5">
+                         {searchPermissions.canViewEmail ? <Mail size={14} className="text-emerald-600"/> : <Lock size={14} className="text-[#d8cdcd]"/>}
+                         <span className={`text-[12px] font-medium ${searchPermissions.canViewEmail ? 'text-[#2a1b1b]' : 'text-[#a09393]'}`}>Email</span>
+                       </div>
+                       <div className="flex items-center gap-1.5">
+                         {searchPermissions.canViewPhone ? <Phone size={14} className="text-emerald-600"/> : <Lock size={14} className="text-[#d8cdcd]"/>}
+                         <span className={`text-[12px] font-medium ${searchPermissions.canViewPhone ? 'text-[#2a1b1b]' : 'text-[#a09393]'}`}>Phone</span>
+                       </div>
+                       {(!searchPermissions.canViewEmail || !searchPermissions.canViewPhone) && (
+                          <button onClick={() => { closeGlobalSearch(); setActiveTab('Billing'); }} className="ml-2 text-[11px] font-bold text-[#800000] hover:underline">
+                            Upgrade
+                          </button>
+                       )}
+                    </div>
+
                     <button
                       type="button"
                       onClick={() => setIsSaveListModalOpen(true)}
@@ -890,98 +1129,104 @@ const executeProspectSearch = async () => {
                     </div>
                   ) : (
                     <div className="flex-1 overflow-y-auto flex flex-col">
-                      {/* Calculate paginated results */}
-                      {(() => {
-                        const totalPages = Math.ceil(searchResults.length / resultsPerPage);
-                        const startIdx = (currentPage - 1) * resultsPerPage;
-                        const endIdx = startIdx + resultsPerPage;
-                        const paginatedResults = searchResults.slice(startIdx, endIdx);
-                        
-                        return (
-                          <>
-                            <table className="w-full text-left border-collapse">
-                              <thead className="bg-white sticky top-0 border-b border-[#e8e2e2] shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-                                <tr>
-                                  <th className="px-5 py-3 w-12 text-left">
-                                    <input
-                                      type="checkbox"
-                                      className="cursor-pointer"
-                                      checked={paginatedResults.length > 0 && paginatedResults.every(s => selectedProspects.some(p => p.id === s.id))}
-                                      onChange={(e) => { if (e.target.checked) addAllVisibleToSelection(); else { setSelectedProspects(prev => prev.filter(p => !paginatedResults.some(s => s.id === p.id))); } }}
+                      <>
+                        <table className="w-full text-left border-collapse">
+                          <thead className="bg-white sticky top-0 border-b border-[#e8e2e2] shadow-[0_1px_2px_rgba(0,0,0,0.02)] z-10">
+                            <tr>
+                              <th className="px-5 py-3 w-12 text-left">
+                                <input
+                                  type="checkbox"
+                                  className="cursor-pointer"
+                                  checked={paginatedResults.length > 0 && paginatedResults.every(s => selectedProspects.some(p => p.id === s.id))}
+                                  onChange={(e) => {
+                                    if (e.target.checked) addAllVisibleToSelection();
+                                    else setSelectedProspects(prev => prev.filter(p => !paginatedResults.some(s => s.id === p.id)));
+                                  }}
+                                />
+                              </th>
+                              <th className="px-5 py-3 text-[11px] font-bold text-[#7a6b6b] uppercase tracking-wider">Prospect Name</th>
+                              <th className="px-5 py-3 text-[11px] font-bold text-[#7a6b6b] uppercase tracking-wider">Job Title</th>
+                              <th className="px-5 py-3 text-[11px] font-bold text-[#7a6b6b] uppercase tracking-wider">Company</th>
+                              <th className="px-5 py-3 text-[11px] font-bold text-[#7a6b6b] uppercase tracking-wider">Location</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#e8e2e2]">
+                            {paginatedResults.length === 0 ? (
+                              <tr>
+                                <td colSpan="5" className="px-5 py-10 text-center text-[13px] text-[#7a6b6b]">
+                                  No prospects found on this page.
+                                </td>
+                              </tr>
+                            ) : (
+                              paginatedResults.map((prospect) => (
+                                <tr key={prospect.id} className="hover:bg-[#f9fafb] transition-colors group">
+                                  <td className="px-5 py-4">
+                                    <input 
+                                      type="checkbox" 
+                                      checked={selectedProspects.some(p => p.id === prospect.id)} 
+                                      onChange={() => toggleSelectProspect(prospect)} 
+                                      className="cursor-pointer" 
                                     />
-                                  </th>
-                                  <th className="px-5 py-3 text-[11px] font-bold text-[#7a6b6b] uppercase tracking-wider">Prospect Name</th>
-                                  <th className="px-5 py-3 text-[11px] font-bold text-[#7a6b6b] uppercase tracking-wider">Job Title</th>
-                                  <th className="px-5 py-3 text-[11px] font-bold text-[#7a6b6b] uppercase tracking-wider">Company</th>
-                                  <th className="px-5 py-3 text-[11px] font-bold text-[#7a6b6b] uppercase tracking-wider">Location</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-[#e8e2e2]">
-                                {paginatedResults.map((prospect) => (
-                                  <tr key={prospect.id} className="hover:bg-[#f9fafb] transition-colors group">
-                                    <td className="px-5 py-4">
-                                      <input type="checkbox" checked={selectedProspects.some(p => p.id === prospect.id)} onChange={() => toggleSelectProspect(prospect)} className="cursor-pointer" />
-                                    </td>
-                                    <td className="px-5 py-4">
-                                      <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-[#f5f2f2] text-[#800000] flex items-center justify-center text-[11px] font-bold">
-                                          {prospect.firstName?.charAt(0)}
-                                        </div>
-                                        <span className="text-[13px] font-bold text-[#2a1b1b]">
-                                          {prospect.firstName} {prospect.lastName}
-                                        </span>
+                                  </td>
+                                  <td className="px-5 py-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-8 h-8 rounded-full bg-[#f5f2f2] text-[#800000] flex items-center justify-center text-[11px] font-bold uppercase">
+                                        {maskName(prospect.firstName)?.charAt(0)}
                                       </div>
-                                    </td>
-                                    <td className="px-5 py-4 text-[13px] text-[#4a3b3b] font-medium">{prospect.jobTitle}</td>
-                                    <td className="px-5 py-4 text-[13px] text-[#7a6b6b] flex items-center gap-2">
-                                      <Building2 size={14} /> {prospect.companyName}
-                                    </td>
-                                    <td className="px-5 py-4 text-[13px] text-[#7a6b6b]">{prospect.country}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                            
-                            {/* Pagination Controls */}
-                            <div className="border-t border-[#e8e2e2] bg-[#f9fafb] px-4 py-3 flex items-center justify-between">
-                              <span className="text-[12px] text-[#7a6b6b] font-medium">
-                                Showing {startIdx + 1}–{Math.min(endIdx, searchResults.length)} of {searchResults.length} prospects
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <button 
-                                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                  disabled={currentPage === 1}
-                                  className="px-3 py-1.5 border border-[#d8cdcd] rounded-lg text-[12px] font-medium text-[#2a1b1b] disabled:text-[#7a6b6b] disabled:bg-[#f9fafb] hover:bg-white transition-colors disabled:cursor-not-allowed"
+                                      <span className="text-[13px] font-bold text-[#2a1b1b]">
+                                        {maskName(prospect.firstName)} {maskName(prospect.lastName)}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="px-5 py-4 text-[13px] text-[#4a3b3b] font-medium">{prospect.jobTitle}</td>
+                                  <td className="px-5 py-4 text-[13px] text-[#7a6b6b] flex items-center gap-2">
+                                    <Building2 size={14} /> {prospect.companyName}
+                                  </td>
+                                  <td className="px-5 py-4 text-[13px] text-[#7a6b6b]">{prospect.country}</td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                        
+                        {/* Pagination Controls */}
+                        <div className="border-t border-[#e8e2e2] bg-[#f9fafb] px-4 py-3 flex items-center justify-between mt-auto">
+                          <span className="text-[12px] text-[#7a6b6b] font-medium">
+                            Showing {currentPageStartIndex + 1}–{Math.min(currentPageEndIndex, searchResults.length)} of {searchResults.length} prospects
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                              disabled={currentPage === 1}
+                              className="px-3 py-1.5 border border-[#d8cdcd] rounded-lg text-[12px] font-medium text-[#2a1b1b] disabled:text-[#7a6b6b] disabled:bg-[#f9fafb] hover:bg-white transition-colors disabled:cursor-not-allowed"
+                            >
+                              ← Prev
+                            </button>
+                            <div className="flex items-center gap-1">
+                              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                                <button
+                                  key={page}
+                                  onClick={() => setCurrentPage(page)}
+                                  className={`w-8 h-8 rounded text-[11px] font-bold transition-colors ${
+                                    currentPage === page
+                                      ? 'bg-[#800000] text-white'
+                                      : 'border border-[#d8cdcd] text-[#2a1b1b] hover:bg-[#f5f2f2]'
+                                  }`}
                                 >
-                                  ← Prev
+                                  {page}
                                 </button>
-                                <div className="flex items-center gap-1">
-                                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                                    <button
-                                      key={page}
-                                      onClick={() => setCurrentPage(page)}
-                                      className={`w-8 h-8 rounded text-[11px] font-bold transition-colors ${
-                                        currentPage === page
-                                          ? 'bg-[#800000] text-white'
-                                          : 'border border-[#d8cdcd] text-[#2a1b1b] hover:bg-[#f5f2f2]'
-                                      }`}
-                                    >
-                                      {page}
-                                    </button>
-                                  ))}
-                                </div>
-                                <button 
-                                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                                  disabled={currentPage === totalPages}
-                                  className="px-3 py-1.5 border border-[#d8cdcd] rounded-lg text-[12px] font-medium text-[#2a1b1b] disabled:text-[#7a6b6b] disabled:bg-[#f9fafb] hover:bg-white transition-colors disabled:cursor-not-allowed"
-                                >
-                                  Next →
-                                </button>
-                              </div>
+                              ))}
                             </div>
-                          </>
-                        );
-                      })()}
+                            <button 
+                              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                              disabled={currentPage === totalPages}
+                              className="px-3 py-1.5 border border-[#d8cdcd] rounded-lg text-[12px] font-medium text-[#2a1b1b] disabled:text-[#7a6b6b] disabled:bg-[#f9fafb] hover:bg-white transition-colors disabled:cursor-not-allowed"
+                            >
+                              Next →
+                            </button>
+                          </div>
+                        </div>
+                      </>
                     </div>
                   )}
                 </div>
@@ -1006,18 +1251,23 @@ const executeProspectSearch = async () => {
                     {selectedProspects.length === 0 ? (
                       <p className="text-[13px] text-[#7a6b6b] text-center py-4">No prospects selected yet. Use the checkboxes to add.</p>
                     ) : (
-                      selectedProspects.map(p => (
-                        <div key={p.id} className="p-2 border border-[#e8e2e2] rounded-lg hover:border-[#800000] transition-colors">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1">
-                              <div className="text-[12px] font-bold text-[#2a1b1b] truncate">{p.firstName} {p.lastName}</div>
-                              <div className="text-[11px] text-[#7a6b6b] truncate">{p.jobTitle}</div>
-                              <div className="text-[11px] text-[#7a6b6b] truncate">{p.companyName}</div>
+                      selectedProspects.map(p => {
+                        const mFirstName = maskName(p.firstName);
+                        const mLastName = maskName(p.lastName);
+
+                        return (
+                          <div key={p.id} className="p-2 border border-[#e8e2e2] rounded-lg hover:border-[#800000] transition-colors">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 overflow-hidden">
+                                <div className="text-[12px] font-bold text-[#2a1b1b] truncate">{mFirstName} {mLastName}</div>
+                                <div className="text-[11px] text-[#7a6b6b] truncate">{p.jobTitle}</div>
+                                <div className="text-[11px] text-[#7a6b6b] truncate">{p.companyName}</div>
+                              </div>
+                              <button onClick={() => removeFromSelection(p.id)} className="text-[#800000] hover:text-[#660000] text-xs font-bold">✕</button>
                             </div>
-                            <button onClick={() => removeFromSelection(p.id)} className="text-[#800000] hover:text-[#660000] text-xs font-bold">✕</button>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                   <div className="border-t border-[#e8e2e2] pt-3 space-y-2">

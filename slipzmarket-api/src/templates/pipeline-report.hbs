@@ -1,0 +1,24 @@
+<div class="title-box">
+  <h1>Sales Prospecting Pipeline</h1>
+  <p>Targeting: {{industry}} | Region: {{country}}</p>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Status</th>
+      <th>Lead Name</th>
+      <th>Company</th>
+      <th>Priority</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each leads}}
+    <tr>
+      <td><span class="badge">{{this.status}}</span></td> <td>{{this.firstName}} {{this.lastName}}</td>
+      <td>{{this.companyName}}</td>
+      <td><strong>{{this.priority}}</strong></td>
+    </tr>
+    {{/each}}
+  </tbody>
+</table>

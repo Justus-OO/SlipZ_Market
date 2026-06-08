@@ -22,6 +22,7 @@ import paymentRoutes from './routes/payment.js';
 import datasetRoutes from './routes/datasets.js';
 import adminDashboardRoutes from './routes/admin.dashboard.js';
 import notificationRoutes from './routes/notifications.js';
+import reportsRoutes from './routes/reports.js';
 
 const app = express();
 
@@ -57,6 +58,8 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
+// Preflight requests are already handled by the global CORS middleware above.
+
 // Increase JSON limit slightly to prevent payload-too-large crashes
 app.use(express.json({ limit: '10mb' }));
 
@@ -76,8 +79,9 @@ app.use('/api/admin-invoice', adminInvoiceRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/datasets', datasetRoutes);
-app.use('/api/admin-dashboard', adminDashboardRoutes);
-app.use('/api/notifications',notificationRoutes);
+app.use('/api/admin/dashboard', adminDashboardRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/reports', reportsRoutes);
 
 startInactivityJob();
 
