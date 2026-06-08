@@ -3,7 +3,7 @@ import { Router, Response, Request } from 'express';
 import { CoreService } from '../services/core.services'; 
 import prisma from '../db';
 import { requireAuth, requireAdmin } from './middleware/auth.middleware';
-import { MailerService } from 'services/mailer.service';
+import { MailerService } from '../services/mailer.service';
 
 const router = Router();
 
