@@ -240,4 +240,79 @@ router.post('/google', CoreService.catchAsync(async (req, res) => {
   });
 }));
 
+// ==========================================
+// FORGOT PASSWORD - REQUEST RESET
+// ==========================================
+router.post('/forgot-password', CoreService.catchAsync(async (req, res) => {
+  const { email: inputEmail } = req.body;
+  if (!inputEmail) return CoreService.error(res, 400, 'Email is required.');
+
+  const email = CoreService.normalizeEmail(inputEmail);
+  const user = await prisma.user.findUnique({ where: { email } });
+  
+  if (!user) {
+    // Don't reveal if user exists (security best practice)
+    return CoreService.success(res, 200, 'If an account exists with this email, a reset code has been sent.');
+  }
+
+  const otpCode = CoreService.generateOTP();
+  
+  // Send reset email with OTP
+  await sendVerificationEmail(email, otpCode);
+
+  // Create a short-lived reset token
+  const resetToken = jwt.sign(
+    { userId: user.id, email, otpCode },
+    process.env.JWT_SECRET!,
+    { expiresIn: '15m' }
+  );
+
+  return CoreService.success(res, 200, 'Password reset code sent to your email.', { resetToken });
+}));
+
+// ==========================================
+// RESET PASSWORD - VERIFY OTP & SET NEW PASSWORD
+// ==========================================
+const resetPasswordSchema = z.object({
+  newPassword: z.string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Must contain at least one lowercase letter')
+    .regex(/[0-9]/, 'Must contain at least one number')
+    .regex(/[\W_]/, 'Must contain at least one special character'),
+});
+
+router.post('/reset-password', CoreService.catchAsync(async (req, res) => {
+  const { resetToken, code, newPassword } = req.body;
+  
+  if (!resetToken || !code || !newPassword) {
+    return CoreService.error(res, 400, 'Missing required fields.');
+  }
+
+  const validation = resetPasswordSchema.safeParse({ newPassword });
+  if (!validation.success) {
+    return CoreService.error(res, 400, 'Password does not meet security requirements.');
+  }
+
+  let decoded: any;
+  try {
+    decoded = CoreService.verifyAuthToken(resetToken);
+  } catch (err) {
+    return CoreService.error(res, 400, 'Reset session expired. Please request a new password reset.');
+  }
+
+  if (decoded.otpCode !== code) {
+    return CoreService.error(res, 400, 'Invalid reset code.');
+  }
+
+  const passwordHash = await CoreService.hashPassword(newPassword);
+  
+  await prisma.user.update({
+    where: { id: decoded.userId },
+    data: { passwordHash }
+  });
+
+  return CoreService.success(res, 200, 'Password has been reset successfully. You can now log in with your new password.');
+}));
+
 export default router;

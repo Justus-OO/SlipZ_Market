@@ -125,12 +125,215 @@ const VerificationForm = ({
 };
 
 // ==========================================
+// 2. FORGOT PASSWORD FORM COMPONENT
+// ==========================================
+const ForgotPasswordForm = ({ 
+  forgotPasswordEmail, setForgotPasswordEmail, handleForgotPasswordSubmit,
+  isLoading, setIsForgotPasswordMode, resetFormData, showSuccess, error, setError
+}) => {
+  return (
+    <div className="flex flex-col animate-fade-in-right">
+      <button 
+        onClick={() => {
+          setIsForgotPasswordMode(false);
+          resetFormData();
+          setError('');
+        }}
+        className="w-fit flex items-center gap-1.5 text-[13px] font-bold text-muted hover:text-[#3b2a23] mb-8 transition-colors"
+      >
+        <ArrowLeft size={16} /> Back to Login
+      </button>
+      
+      <div className="w-14 h-14 bg-white border border-[#e5ded5] rounded-2xl flex items-center justify-center mb-6 shadow-sm">
+        <Mail size={24} className="text-gray-400" />
+      </div>
+      
+      <h2 className="text-3xl font-black text-[#3b2a23] tracking-tight mb-2">Reset Password</h2>
+      <p className="text-[15px] text-gray-500 font-medium mb-8 leading-relaxed">
+        Enter your email address and we'll send you a code to reset your password.
+      </p>
+
+      <form onSubmit={handleForgotPasswordSubmit} className="flex flex-col gap-6">
+        <div className="flex flex-col gap-1.5 group">
+          <label className="text-[12px] font-bold text-[#3b2a23] group-focus-within:text-[#8b6f5a] transition-colors">Work Email</label>
+          <div className="relative">
+            <Mail size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#8b6f5a] transition-colors" />
+            <input 
+              type="email" 
+              value={forgotPasswordEmail} 
+              onChange={(e) => {
+                setForgotPasswordEmail(e.target.value);
+                setError('');
+              }} 
+              required 
+              placeholder="name@company.com" 
+              className="w-full bg-white border border-[#e5ded5] pl-10 pr-4 py-3 rounded-xl text-[14px] font-medium text-[#3b2a23] outline-none focus:border-[#8b6f5a] focus:ring-4 focus:ring-[#8b6f5a]/10 transition-all shadow-sm" 
+            />
+          </div>
+        </div>
+
+        <button 
+          type="submit" 
+          disabled={isLoading}
+          className="w-full bg-[#8b6f5a] hover:bg-[#6c5544] text-white font-bold text-[15px] py-3.5 rounded-xl shadow-xl shadow-[#8b6f5a]/20 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+        >
+          {isLoading ? <><Loader2 size={18} className="animate-spin" /> Sending...</> : <>Send Reset Code <ArrowRight size={18} /></>}
+        </button>
+      </form>
+    </div>
+  );
+};
+
+// ==========================================
+// 3. RESET PASSWORD FORM COMPONENT
+// ==========================================
+const ResetPasswordForm = ({ 
+  otp, setOtp, otpRefs, newPassword, setNewPassword, passStrength,
+  handleResetPasswordSubmit, isLoading, setIsResetingPassword, setError, 
+  showSuccess, setIsForgotPasswordMode
+}) => {
+  const handleOtpChange = (index, value) => {
+    if (isNaN(value)) return;
+    const newOtp = [...otp];
+    newOtp[index] = value;
+    setOtp(newOtp);
+    setError('');
+
+    if (value !== '' && index < 5) {
+      otpRefs.current[index + 1].focus();
+    }
+  };
+
+  const handleOtpKeyDown = (index, e) => {
+    if (e.key === 'Backspace' && otp[index] === '' && index > 0) {
+      otpRefs.current[index - 1].focus();
+    }
+  };
+
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData('text').slice(0, 6).split('');
+    if (pastedData.some(isNaN)) return;
+    
+    const newOtp = [...otp];
+    pastedData.forEach((char, i) => {
+      if (i < 6) newOtp[i] = char;
+    });
+    setOtp(newOtp);
+    if (pastedData.length < 6) {
+      otpRefs.current[pastedData.length].focus();
+    } else {
+      otpRefs.current[5].focus();
+    }
+  };
+
+  return (
+    <div className="flex flex-col animate-fade-in-right">
+      <button 
+        onClick={() => setIsResetingPassword(false)}
+        className="w-fit flex items-center gap-1.5 text-[13px] font-bold text-muted hover:text-[#3b2a23] mb-8 transition-colors"
+      >
+        <ArrowLeft size={16} /> Back
+      </button>
+      
+      <div className="w-14 h-14 bg-white border border-[#e5ded5] rounded-2xl flex items-center justify-center mb-6 shadow-sm">
+        <Lock size={24} className="text-gray-400" />
+      </div>
+      
+      <h2 className="text-3xl font-black text-[#3b2a23] tracking-tight mb-2">Create New Password</h2>
+      <p className="text-[15px] text-gray-500 font-medium mb-8 leading-relaxed">
+        Enter the 6-digit code and your new password to reset your account.
+      </p>
+
+      <form onSubmit={handleResetPasswordSubmit} className="flex flex-col gap-6">
+        <div>
+          <p className="text-[12px] font-bold text-[#3b2a23] mb-3">Reset Code</p>
+          <div className="grid grid-cols-6 gap-2 sm:gap-3" onPaste={handlePaste}>
+            {otp.map((digit, index) => (
+              <input
+                key={index}
+                ref={(el) => (otpRefs.current[index] = el)}
+                type="text"
+                maxLength={1}
+                value={digit}
+                onChange={(e) => handleOtpChange(index, e.target.value)}
+                onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                className="w-full h-14 sm:h-16 text-center text-2xl font-black text-[#3b2a23] bg-white border border-[#e5ded5] rounded-xl outline-none focus:border-[#8b6f5a] focus:ring-4 focus:ring-[#8b6f5a]/20 transition-all shadow-sm"
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5 group">
+          <label className="text-[12px] font-bold text-[#3b2a23] group-focus-within:text-[#8b6f5a] transition-colors">New Password</label>
+          <div className="relative">
+            <Lock size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#8b6f5a] transition-colors" />
+            <input 
+              type="password" 
+              value={newPassword} 
+              onChange={(e) => {
+                setNewPassword(e.target.value);
+                setError('');
+              }} 
+              required 
+              placeholder="••••••••" 
+              className="w-full bg-white border border-[#e5ded5] pl-10 pr-4 py-3 rounded-xl text-[14px] font-mono text-[#3b2a23] outline-none focus:border-[#8b6f5a] focus:ring-4 focus:ring-[#8b6f5a]/10 transition-all shadow-sm" 
+            />
+          </div>
+          
+          {newPassword.length > 0 && (
+            <div className="mt-2 flex flex-col gap-1">
+              <div className="flex gap-1.5 h-1.5 w-full">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className={`flex-1 rounded-full transition-all duration-300 ${
+                    i < passStrength 
+                      ? passStrength < 2 ? 'bg-red-400' 
+                      : passStrength < 3 ? 'bg-amber-400' 
+                      : 'bg-emerald-500' 
+                      : 'bg-[#e5ded5]'
+                  }`} />
+                ))}
+              </div>
+              <p className={`text-[11px] font-bold ${passStrength < 2 ? 'text-red-500' : passStrength < 3 ? 'text-amber-500' : 'text-emerald-600'}`}>
+                {passStrength < 2 ? 'Weak' : passStrength < 3 ? 'Good' : 'Strong'} password
+              </p>
+            </div>
+          )}
+        </div>
+
+        <button 
+          type="submit" 
+          disabled={isLoading || otp.join('').length !== 6 || newPassword.length === 0}
+          className="w-full bg-[#8b6f5a] hover:bg-[#6c5544] text-white font-bold text-[15px] py-3.5 rounded-xl shadow-xl shadow-[#8b6f5a]/20 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+        >
+          {isLoading ? <><Loader2 size={18} className="animate-spin" /> Resetting...</> : <>Reset Password <ArrowRight size={18} /></>}
+        </button>
+      </form>
+
+      <button 
+        type="button" 
+        onClick={() => {
+          setIsForgotPasswordMode(false);
+          setIsResetingPassword(false);
+          setOtp(['', '', '', '', '', '']);
+          setNewPassword('');
+          setError('');
+        }}
+        className="text-center text-[13px] font-bold text-gray-500 mt-6 hover:text-[#3b2a23] transition-colors"
+      >
+        Back to Login
+      </button>
+    </div>
+  );
+};
+
+// ==========================================
 // 2. AUTH DETAILS FORM COMPONENT
 // ==========================================
 const AuthDetailsForm = ({ 
   activeTab, setActiveTab, formData, handleChange, 
   handleInitialSubmit, handleGoogleSuccess, isLoading, 
-  passStrength, setError 
+  passStrength, setError, setIsForgotPasswordMode
 }) => {
   return (
     <div className="animate-fade-in-up">
@@ -200,7 +403,7 @@ const AuthDetailsForm = ({
         <div className="flex flex-col gap-1.5 group">
           <div className="flex items-center justify-between">
             <label className="text-[12px] font-bold text-[#3b2a23] group-focus-within:text-[#8b6f5a] transition-colors">Password</label>
-            {activeTab === 'login' && <button type="button" className="text-[12px] font-bold text-[#8b6f5a] hover:text-[#3b2a23] transition-colors">Forgot password?</button>}
+            {activeTab === 'login' && <button type="button" onClick={() => setIsForgotPasswordMode(true)} className="text-[12px] font-bold text-[#8b6f5a] hover:text-[#3b2a23] transition-colors">Forgot password?</button>}
           </div>
           <div className="relative">
             <Lock size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#8b6f5a] transition-colors" />
@@ -247,16 +450,18 @@ const AuthDetailsForm = ({
         </div>
       </div>
 
-      <div className="flex justify-center w-full rounded-xl overflow-hidden shadow-sm border border-[#e5ded5] hover:border-[#8b6f5a] transition-colors bg-white">
-        <GoogleLogin 
-          onSuccess={handleGoogleSuccess} 
-          onError={() => setError('Google Login Failed. Please try again.')}
-          useOneTap={false}
-          theme="outline"
-          size="large"
-          text="continue_with"
-          width="100%"
-        />
+      <div className="flex justify-center w-full">
+        <div className="rounded-xl overflow-hidden shadow-sm border border-[#e5ded5] hover:border-[#8b6f5a] transition-colors bg-white">
+          <GoogleLogin 
+            onSuccess={handleGoogleSuccess} 
+            onError={() => setError('Google Login Failed. Please try again.')}
+            useOneTap={false}
+            theme="outline"
+            size="large"
+            text="continue_with"
+            width="320"
+          />
+        </div>
       </div>
     </div>
   );
@@ -287,6 +492,12 @@ const AuthComponent = () => {
   const [isVerifying, setIsVerifying] = useState(false);
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const otpRefs = useRef([]);
+
+  const [isForgotPasswordMode, setIsForgotPasswordMode] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [isResetingPassword, setIsResetingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
 
   const [formData, setFormData] = useState({
     firstName: '', lastName: '', companyName: '', email: '', password: ''
@@ -427,6 +638,64 @@ const AuthComponent = () => {
     }
   };
 
+  const handleForgotPasswordSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    try {
+      const res = await axios.post(`${API_URL}/auth/forgot-password`, {
+        email: forgotPasswordEmail
+      });
+      setResetToken(res.data.resetToken);
+      setIsResetingPassword(true);
+      showSuccess('Reset code sent to your email. Please check your inbox.');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to request password reset. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResetPasswordSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+    const code = otp.join('');
+
+    try {
+      const res = await axios.post(`${API_URL}/auth/reset-password`, {
+        resetToken,
+        code,
+        newPassword
+      });
+      showSuccess('Password reset successfully! You can now log in.');
+      
+      // Reset form and go back to login
+      setTimeout(() => {
+        setIsForgotPasswordMode(false);
+        setIsResetingPassword(false);
+        setForgotPasswordEmail('');
+        setNewPassword('');
+        setOtp(['', '', '', '', '', '']);
+        setResetToken('');
+        setFormData({ firstName: '', lastName: '', companyName: '', email: '', password: '' });
+      }, 2000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to reset password. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const resetFormData = () => {
+    setFormData({ firstName: '', lastName: '', companyName: '', email: '', password: '' });
+    setOtp(['', '', '', '', '', '']);
+    setForgotPasswordEmail('');
+    setNewPassword('');
+    setResetToken('');
+  };
+
   return (
     <div className="min-h-screen w-full flex flex-col lg:flex-row bg-[#f5efe6] font-sans selection:bg-[#8b6f5a] selection:text-white">
       
@@ -492,7 +761,36 @@ const AuthComponent = () => {
             </div>
           )}
 
-          {isVerifying ? (
+          {isForgotPasswordMode ? (
+            isResetingPassword ? (
+              <ResetPasswordForm 
+                otp={otp}
+                setOtp={setOtp}
+                otpRefs={otpRefs}
+                newPassword={newPassword}
+                setNewPassword={setNewPassword}
+                passStrength={calculateStrength(newPassword)}
+                handleResetPasswordSubmit={handleResetPasswordSubmit}
+                isLoading={isLoading}
+                setIsResetingPassword={setIsResetingPassword}
+                setError={setError}
+                showSuccess={showSuccess}
+                setIsForgotPasswordMode={setIsForgotPasswordMode}
+              />
+            ) : (
+              <ForgotPasswordForm 
+                forgotPasswordEmail={forgotPasswordEmail}
+                setForgotPasswordEmail={setForgotPasswordEmail}
+                handleForgotPasswordSubmit={handleForgotPasswordSubmit}
+                isLoading={isLoading}
+                setIsForgotPasswordMode={setIsForgotPasswordMode}
+                resetFormData={resetFormData}
+                showSuccess={showSuccess}
+                error={error}
+                setError={setError}
+              />
+            )
+          ) : isVerifying ? (
             <VerificationForm 
               formData={formData}
               otp={otp}
@@ -517,6 +815,7 @@ const AuthComponent = () => {
               isLoading={isLoading}
               passStrength={passStrength}
               setError={setError}
+              setIsForgotPasswordMode={setIsForgotPasswordMode}
             />
           )}
         </div>
