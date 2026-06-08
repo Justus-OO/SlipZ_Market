@@ -26,6 +26,8 @@ import reportsRoutes from './routes/reports.js';
 
 const app = express();
 
+
+
 // CRITICAL FIX: Hardcode to 5000 so Render doesn't expose Node directly to the internet
 const PORT = 5000;
 const HOST = '127.0.0.1'; // Explicitly bind to localhost to perfectly match Nginx
@@ -57,8 +59,6 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
-
-// Preflight requests are already handled by the global CORS middleware above.
 
 // Increase JSON limit slightly to prevent payload-too-large crashes
 app.use(express.json({ limit: '10mb' }));

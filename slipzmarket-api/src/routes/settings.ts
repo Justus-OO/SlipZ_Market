@@ -3,6 +3,7 @@ import { Router, Response, Request } from 'express';
 import { CoreService } from '../services/core.services'; 
 import prisma from '../db';
 import { requireAuth, requireAdmin } from './middleware/auth.middleware';
+import { MailerService } from 'services/mailer.service';
 
 const router = Router();
 
@@ -147,6 +148,40 @@ router.delete('/email-templates/:id', requireAuth, requireAdmin, CoreService.cat
   const { id } = req.params;
   await prisma.emailTemplate.delete({ where: { id } });
   return CoreService.success(res, 200, 'Template deleted', {});
+}));
+
+router.post('/request-verification', requireAuth, requireAdmin, CoreService.catchAsync(async (req: any, res: Response) => {
+  const userId = req.user?.userId;
+
+  // 1. Fetch user email
+  const user = await prisma.user.findUnique({ 
+    where: { id: userId },
+    select: { email: true } 
+  });
+
+  if (!user?.email) return res.status(404).json({ message: 'User email not found.' });
+
+  // 2. Generate and save code
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  await prisma.verificationCode.create({ 
+    data: { 
+      userId, 
+      code, 
+      expiresAt: new Date(Date.now() + 5 * 60000) 
+    } 
+  });
+
+  // 3. Send email using your MailerService
+  await MailerService.send({
+    to: user.email,
+    templateName: 'ADMIN_VERIFICATION_CODE', // Ensure this exists in your EmailTemplate table
+    context: { 
+      code, 
+      userName: req.user.firstName || 'Admin' 
+    }
+  });
+
+  return CoreService.success(res, 200, 'Security code sent to your email.');
 }));
 
 export default router;

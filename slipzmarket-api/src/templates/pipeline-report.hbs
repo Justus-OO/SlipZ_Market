@@ -1,24 +1,34 @@
-<div class="title-box">
-  <h1>Sales Prospecting Pipeline</h1>
-  <p>Targeting: {{industry}} | Region: {{country}}</p>
-</div>
+<div class="report-container">
+  <div class="report-header">
+    <h1>Sales Prospecting Pipeline</h1>
+    <div class="header-metadata">
+      <span>Industry: {{industry}}</span> | <span>Region: {{country}}</span>
+    </div>
+  </div>
 
-<table>
-  <thead>
-    <tr>
-      <th>Status</th>
-      <th>Lead Name</th>
-      <th>Company</th>
-      <th>Priority</th>
-    </tr>
-  </thead>
-  <tbody>
-    {{#each leads}}
-    <tr>
-      <td><span class="badge">{{this.status}}</span></td> <td>{{this.firstName}} {{this.lastName}}</td>
-      <td>{{this.companyName}}</td>
-      <td><strong>{{this.priority}}</strong></td>
-    </tr>
-    {{/each}}
-  </tbody>
-</table>
+  <div class="summary-cards">
+    <div class="card"><strong>Total Prospects</strong><br>{{totalLeads}}</div>
+    <div class="card"><strong>Conversion Rate</strong><br>{{conversionRate}}%</div>
+  </div>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Prospect</th>
+        <th>Company</th>
+        <th>Priority</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each leads}}
+      <tr>
+        <td><span class="badge badge-{{this.status}}">{{this.status}}</span></td>
+        <td>{{this.firstName}} {{this.lastName}}</td>
+        <td>{{this.companyName}}</td>
+        <td><strong class="text-accent">{{this.priority}}</strong></td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+</div>

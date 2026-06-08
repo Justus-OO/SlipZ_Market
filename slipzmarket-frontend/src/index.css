@@ -31,32 +31,30 @@
 
 /* Dark theme override */
 [data-theme="dark"] {
-  /* Deep, warm black-cherry backgrounds */
-  --bg: #221519;
-  --surface: #2d1c22;
-  --surface-soft: #38242b;
-  --surface-strong: #452c34;
+  /* Deep, relaxed charcoal backgrounds (Matching the desaturated vibe of --bg) */
+  --bg: #0f172a;           /* A deep, soft navy-charcoal base */
+  --surface: #1e293b;      /* A cooler, softer surface than pure black */
+  --surface-soft: #334155; 
+  --surface-strong: #475569; 
   
-  /* Soft pinkish-white text to reduce eye strain */
-  --text-primary: #faedf0;
+  /* Off-white text (Reduces strain but keeps the clarity of --text-primary) */
+  --text-primary: #f1f5f9;  
   
-  /* Dusty rose for secondary text/icons */
-  --muted: #b898a3;
+  /* Muted slate (The darker equivalent to your light-theme muted) */
+  --muted: #64748b;        
   
-  /* Rich wine borders */
-  --border: #523540;
-  --border-strong: #694451;
+  /* Subtle borders (Refined to match the 'Glass' feel) */
+  --border: #334155;        
+  --border-strong: #475569; 
   
-  /* Cute blush/rose accent pops */
-  --accent: #d46a84;
-  --accent-hover: #e6859b;
+  /* Accents: "Monochrome-Chilled" (The dark version of your original accent) */
+  --accent: #94a3b8;       /* A lighter, airy slate to pop against the dark bg */
+  --accent-hover: #cbd5e1;
+  --accent-foreground: #0f172a;
   
-  /* Dark text on bright accent buttons */
-  --accent-foreground: #221519;
-  
-  /* Tinted background for active states or subtle highlights */
-  --accent-bg: #402029;
-  --accent-border: rgba(212, 106, 132, 0.25);
+  /* UI Elements: Darkened Ice */
+  --accent-bg: #1e293b;    
+  --accent-border: rgba(148, 163, 184, 0.2); 
   
   color-scheme: dark;
 }

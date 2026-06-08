@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import axios from 'axios';
+import { API_URL } from '../../utils/api';
 import { 
   Users, Database, DollarSign, 
   Activity, AlertTriangle, CheckCircle2, 
@@ -15,8 +17,17 @@ const ICON_MAP = {
   DollarSign, Users, Database, AlertTriangle, Server, Mail, Zap, Activity
 };
 
+const reportOptions = [
+  { id: 'tax', label: 'Fiscal Tax Report', desc: 'Invoices, tax allocations & revenue.' },
+  { id: 'perf', label: 'Sales Performance', desc: 'Team quotas and revenue metrics.' },
+  { id: 'inv', label: 'Stock Valuation', desc: 'Current stock levels and cost analysis.' }
+];
+
 const AdminDashboard = () => {
   const { t } = useTranslation();
+  const [currentTab, setCurrentTab] = useState('type'); // 'type' or 'dates'
+const [reportSelection, setReportSelection] = useState({ type: 'tax', startDate: '', endDate: '' });
+
   
   // --- CORE STATE (Connected to Backend) ---
   const [timeRange, setTimeRange] = useState('7D');
@@ -241,15 +252,63 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleGenerateTaxReport = (e) => {
-    e.preventDefault();
-    setIsTaxModalOpen(false);
-    showToast('Compiling fiscal tax report...', 'loading');
-    setTimeout(() => {
-      showToast('Tax report generated and sent to admin email.');
-    }, 2000);
-  };
+const handleGenerateReport = async (e) => {
+  e.preventDefault();
 
+  // 1. Validate that we have all required data
+  if (!reportSelection.type || !reportSelection.startDate || !reportSelection.endDate) {
+    showToast("Please select a report type and a date range.", "error");
+    return;
+  }
+
+  // 2. Start the loading process
+  setIsTaxModalOpen(false);
+  showToast(`Compiling ${reportSelection.type} report...`, 'loading');
+
+  try {
+    // 3. Trigger the dynamic backend API
+    const token = localStorage.getItem('slipz_token');
+    
+    const response = await axios.get(`${API_URL}/reports/download/${reportSelection.type}`, {
+      params: { 
+        startDate: reportSelection.startDate, 
+        endDate: reportSelection.endDate 
+      },
+      headers: { 
+        Authorization: `Bearer ${token}` 
+      },
+      responseType: 'blob' // Essential for receiving a PDF file
+    });
+
+    // 4. Create a URL for the downloaded Blob
+    const blob = new Blob([response.data], { type: 'application/pdf' });
+    const url = window.URL.createObjectURL(blob);
+    
+    // 5. Create a temporary link to trigger download
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // Format a clean filename
+    const fileName = `${reportSelection.type}_Report_${reportSelection.startDate}_to_${reportSelection.endDate}.pdf`;
+    link.setAttribute('download', fileName);
+    
+    // Append, click, and cleanup
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    showToast('Report downloaded successfully!');
+    
+    // Reset selection for next time
+    setReportSelection({ type: '', startDate: '', endDate: '' });
+    setCurrentTab('type');
+
+  } catch (error) {
+    console.error("Report generation failed:", error);
+    showToast('Failed to generate report. Please try again.', 'error');
+  }
+};
   // Memoized Search Filter
   const filteredActivity = useMemo(() => {
     if (!activities) return [];
@@ -716,47 +775,74 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* ========================================= */}
-      {/* 3. GENERATE TAX REPORT MODAL              */}
-      {/* ========================================= */}
-      {isTaxModalOpen && (
-        <div className="fixed inset-0 z-70 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-[#3b2a23]/60 backdrop-blur-sm animate-fade-in" onClick={() => setIsTaxModalOpen(false)} />
-          <form onSubmit={handleGenerateTaxReport} className="relative bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col animate-fade-in-up border border-[#d6c9b8]">
-            <div className="px-6 py-5 border-b border-[#d6c9b8] flex items-center justify-between bg-[#faf6f0]">
-              <h3 className="text-[18px] font-bold text-[#3b2a23] flex items-center gap-2">
-                <FileText size={20} className="text-[#8b6f5a]" /> Fiscal Tax Report
-              </h3>
-              <button type="button" onClick={() => setIsTaxModalOpen(false)} className="text-[#8b6f5a] hover:text-[#3b2a23] hover:bg-white p-1.5 rounded-lg transition-colors">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6">
-              <p className="text-[13px] text-[#3b2a23]/80 mb-5">
-                Generate a PDF report containing all completed invoices, tax allocations, and total revenue for your selected fiscal period.
-              </p>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Start Date</label>
-                  <input type="date" required className="w-full px-4 py-2.5 bg-white border border-[#d6c9b8] rounded-xl text-[14px] text-[#3b2a23] font-medium outline-none focus:border-[#8b6f5a]" />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">End Date</label>
-                  <input type="date" required className="w-full px-4 py-2.5 bg-white border border-[#d6c9b8] rounded-xl text-[14px] text-[#3b2a23] font-medium outline-none focus:border-[#8b6f5a]" />
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 p-6 border-t border-[#d6c9b8] bg-[#faf6f0]">
-              <button type="button" onClick={() => setIsTaxModalOpen(false)} className="flex-1 px-4 py-2.5 border border-[#d6c9b8] bg-white text-[#3b2a23] text-[14px] font-bold rounded-xl hover:bg-[#f5efe6] transition-colors shadow-sm">
-                Cancel
-              </button>
-              <button type="submit" className="flex-2 bg-[#8b6f5a] hover:bg-[#6c5544] text-white px-4 py-2.5 rounded-xl text-[14px] font-bold shadow-sm transition-colors flex items-center justify-center gap-2">
-                <Download size={16} /> Generate PDF
-              </button>
-            </div>
-          </form>
+{isTaxModalOpen && (
+  <div className="fixed inset-0 z-70 flex items-center justify-center p-4">
+    <div className="absolute inset-0 bg-[#3b2a23]/60 backdrop-blur-sm" onClick={() => setIsTaxModalOpen(false)} />
+    <form onSubmit={handleGenerateReport} className="relative bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col border border-[#d6c9b8]">
+      
+      {/* Header with Tabs */}
+      <div className="bg-[#faf6f0] border-b border-[#d6c9b8]">
+        <div className="flex px-6 pt-4 gap-6">
+          <button type="button" onClick={() => setCurrentTab('type')} className={`pb-3 text-[13px] font-bold border-b-2 transition-colors ${currentTab === 'type' ? 'border-[#8b6f5a] text-[#8b6f5a]' : 'border-transparent text-[#8b6f5a]/50'}`}>1. Select Report</button>
+          <button type="button" disabled={!reportSelection.type} onClick={() => setCurrentTab('dates')} className={`pb-3 text-[13px] font-bold border-b-2 transition-colors ${currentTab === 'dates' ? 'border-[#8b6f5a] text-[#8b6f5a]' : 'border-transparent text-[#8b6f5a]/50 disabled:opacity-30'}`}>2. Define Period</button>
         </div>
-      )}
+      </div>
+
+      <div className="p-6 min-h-[250px]">
+{currentTab === 'type' ? (
+  <div className="space-y-4">
+    <label className="text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">
+      Report Category
+    </label>
+    <select 
+      value={reportSelection.type} 
+      onChange={(e) => setReportSelection({...reportSelection, type: e.target.value})}
+      className="w-full px-4 py-3 bg-white border-2 border-[#d6c9b8] rounded-xl text-[14px] text-[#3b2a23] font-medium outline-none focus:border-[#8b6f5a] cursor-pointer"
+    >
+      <option value="" disabled>Select a report type...</option>
+      {reportOptions.map((opt) => (
+        <option key={opt.id} value={opt.id}>
+          {opt.label}
+        </option>
+      ))}
+    </select>
+    
+    {/* Description box to give context to the selected report */}
+    <div className="p-4 bg-[#faf6f0] rounded-xl border border-[#d6c9b8] text-[13px] text-[#8b6f5a]">
+      {reportOptions.find(o => o.id === reportSelection.type)?.desc || "Please select a report to see details."}
+    </div>
+  </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-bold text-[#8b6f5a] uppercase">Start Date</label>
+              <input name="startDate" type="date" required className="w-full px-4 py-2.5 border border-[#d6c9b8] rounded-xl outline-none focus:border-[#8b6f5a]" onChange={(e) => setReportSelection({...reportSelection, startDate: e.target.value})} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-bold text-[#8b6f5a] uppercase">End Date</label>
+              <input name="endDate" type="date" required className="w-full px-4 py-2.5 border border-[#d6c9b8] rounded-xl outline-none focus:border-[#8b6f5a]" onChange={(e) => setReportSelection({...reportSelection, endDate: e.target.value})} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer Buttons */}
+      <div className="flex items-center gap-3 p-6 border-t border-[#d6c9b8] bg-[#faf6f0]">
+        {currentTab === 'dates' && (
+          <button type="button" onClick={() => setCurrentTab('type')} className="px-4 py-2.5 text-[#8b6f5a] font-bold text-[14px]">Back</button>
+        )}
+        <div className="flex-1" />
+        {currentTab === 'type' ? (
+          <button type="button" disabled={!reportSelection.type} onClick={() => setCurrentTab('dates')} className="bg-[#3b2a23] text-white px-6 py-2.5 rounded-xl font-bold text-[14px] disabled:opacity-50">Next</button>
+        ) : (
+          <button type="submit" className="bg-[#8b6f5a] text-white px-6 py-2.5 rounded-xl font-bold text-[14px] flex items-center gap-2">
+            <Download size={16} /> Generate PDF
+          </button>
+        )}
+      </div>
+    </form>
+  </div>
+)}
 
       {/* ========================================= */}
       {/* 4. REGION RESTRICTIONS MODAL              */}

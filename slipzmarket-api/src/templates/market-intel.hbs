@@ -1,31 +1,25 @@
-<div class="header">
+<div class="report-container">
   <h1>Industry Penetration Analysis</h1>
+  
+  <div class="section-title">Market Distribution</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Sector</th>
+        <th>Growth</th>
+        <th>Volume</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each sectors}}
+      <tr>
+        <td>{{this.name}}</td>
+        <td>
+          <div class="progress-bar"><div class="fill" style="width: {{this.percentage}}%"></div></div>
+        </td>
+        <td>{{this.count}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
 </div>
-
-<div class="summary">
-  <h3>Top Sectors in {{workspaceName}}</h3>
-  <ul>
-    {{#each industries}}
-      <li>{{this.name}}: {{this.count}} companies ({{this.percentage}}%)</li>
-    {{/each}}
-  </ul>
-</div>
-
-<table>
-  <thead>
-    <tr>
-      <th>Industry Segment</th>
-      <th>Company Count</th>
-      <th>Avg. Company Size</th>
-    </tr>
-  </thead>
-  <tbody>
-    {{#each industries}}
-    <tr>
-      <td>{{this.name}}</td>
-      <td>{{this.count}}</td>
-      <td>{{this.avgSize}} employees</td>
-    </tr>
-    {{/each}}
-  </tbody>
-</table>

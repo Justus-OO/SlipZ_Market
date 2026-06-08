@@ -20,10 +20,20 @@ model Workspace {
   users    User[]
   invoices Invoice[]
 
+  logoUrl String @default("https://cdn-icons-png.flaticon.com/512/2921/2921133.png")
+
   chatSessions ChatSession[]
   unlockedLeads UnlockedLead[]
 }
 
+model VerificationCode {
+  id        String   @id @default(uuid())
+  userId    String
+  code      String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
 
 // ==========================================
 // NEW: SYSTEM NOTIFICATIONS
@@ -59,6 +69,8 @@ model User {
   isVerified     Boolean   @default(false)
   otpCode        String?
   otpExpiresAt   DateTime?
+
+  verificationCodes VerificationCode[]
 
   // --- DASHBOARD & BILLING ADDITIONS ---
   exportCreditsUsed  Int    @default(0)
@@ -238,9 +250,8 @@ model GlobalSettings {
   gateway       String  @default("Stripe")
   currency      String  @default("USD ($)")
   processingFee Decimal @default(0.10) @db.Decimal(10, 2)
-  publicKey     String  @default("")
-  secretKey     String  @default("")
-
+publicKey     String  @default(env("STRIPE_PUBLIC_KEY"))
+  secretKey     String  @default(env("STRIPE_SECRET_KEY"))
   // Localization & UI
   defaultLanguage  String   @default("en-US")
   enabledLanguages String[] @default(["en-US", "en-GB", "es-ES", "fr-FR"]) // 👈 NEW

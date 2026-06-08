@@ -16,6 +16,55 @@ const GlobalSettings = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [isProcessingData, setIsProcessingData] = useState(null);
+    const [isUnlocked, setIsUnlocked] = useState(false);
+
+
+
+  // Add these to your existing useState definitions
+const [showVerification, setShowVerification] = useState(false);
+const [verificationCode, setVerificationCode] = useState('');
+
+// 1. Trigger the verification process (The "Unlock" button)
+const requestVerification = async () => {
+  setIsSaving(true);
+  try {
+    await axios.post(`${API_URL}/settings/request-verification`, {}, getAuthConfig());
+    setShowVerification(true);
+    showToast('Security code sent to your email.');
+  } catch (err) {
+    showToast('Failed to send verification code.', 'error');
+  } finally {
+    setIsSaving(false);
+  }
+};
+
+// 2. Finalize changes (The modal "Verify & Save" button)
+const finalizeSave = async () => {
+  setIsSaving(true);
+  try {
+    const dynamicVarsObject = customVariables.reduce((acc, curr) => {
+      if (curr.key?.trim()) acc[curr.key.trim()] = curr.value;
+      return acc;
+    }, {});
+
+    const payload = { 
+      ...config, 
+      processingFee: parseFloat(config.processingFee) || 0,
+      customVariables: dynamicVarsObject,
+      verificationCode 
+    };
+
+    await axios.put(`${API_URL}/settings`, payload, getAuthConfig());
+    showToast('Configuration securely saved!');
+    setShowVerification(false);
+    setIsUnlocked(true); // <--- NOW we unlock the inputs
+    setVerificationCode('');
+  } catch (err) {
+    showToast(err.response?.data?.message || 'Verification failed.', 'error');
+  } finally {
+    setIsSaving(false);
+  }
+};
 
   // Master Configuration State
   const [config, setConfig] = useState({
@@ -81,50 +130,6 @@ const GlobalSettings = () => {
     fetchSettings();
   }, []);
 
-  // 2. STRICT SAVE HANDLER
-  const handleSave = async (e) => {
-    e.preventDefault();
-    setIsSaving(true);
-    
-    // Clean up empty variables before sending
-    const dynamicVarsObject = customVariables.reduce((acc, curr) => {
-      if (curr.key && curr.key.trim() !== '') {
-        acc[curr.key.trim()] = curr.value;
-      }
-      return acc;
-    }, {});
-
-    // Ensure processing fee is a float so Prisma doesn't crash
-    const payload = { 
-      ...config, 
-      processingFee: parseFloat(config.processingFee) || 0,
-      customVariables: dynamicVarsObject 
-    };
-
-    try {
-      const response = await axios.put(`${API_URL}/settings`, payload, getAuthConfig());
-      
-      // Explicitly check for successful HTTP status
-      if (response.status === 200 || response.status === 201) {
-        showToast('Configuration securely saved to database!', 'success');
-        
-        // Force UI to sync with exactly what the database returned
-        const confirmedData = response.data.data || response.data;
-        if (confirmedData) {
-           setConfig(prev => ({ ...prev, ...confirmedData }));
-        }
-      } else {
-        throw new Error("Unexpected server response");
-      }
-    } catch (err) {
-      console.error("Save Settings Error:", err);
-      // Extract deep API error messages if they exist
-      const errorMsg = err.response?.data?.message || err.message || 'Failed to save settings.';
-      showToast(errorMsg, 'error');
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   // 3. STRICT DATA ENGINE HANDLER
   const handleDataReset = async (action) => {
@@ -282,68 +287,73 @@ const GlobalSettings = () => {
       </div>
     </div>
   );
+const renderPaymentSettings = () => {
+  // Check if we are currently in "Edit Mode" for sensitive fields
 
-  const renderPaymentSettings = () => (
+
+  return (
     <div className="animate-in fade-in flex flex-col gap-8">
       <div className="flex flex-col gap-2 border-b border-[#d6c9b8] pb-4">
         <h3 className="text-[18px] font-bold text-[#3b2a23] flex items-center gap-2">
           <CreditCard size={20} className="text-[#800000]" /> Billing & Gateway
         </h3>
-        <p className="text-[13px] text-[#8b6f5a] font-medium">Configure transaction fees, currencies, and API keys for the checkout module.</p>
+        <p className="text-[13px] text-[#8b6f5a] font-medium">Configure transaction fees, currencies, and API keys.</p>
       </div>
 
+      {/* Gateway & Currency Selection (Always Enabled) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="flex flex-col gap-2">
           <label className="text-[12px] font-bold text-[#8b6f5a] uppercase tracking-widest">Active Gateway</label>
-          <select 
-            value={config.gateway} onChange={(e) => handleChange('gateway', e.target.value)}
-            className="w-full bg-white border border-[#d6c9b8] rounded-xl px-4 py-3 text-[14px] font-medium text-[#3b2a23] outline-none focus:border-[#800000] focus:ring-1 focus:ring-[#800000]"
-          >
+          <select value={config.gateway} onChange={(e) => handleChange('gateway', e.target.value)} className="w-full bg-white border border-[#d6c9b8] rounded-xl px-4 py-3 text-[14px] font-medium text-[#3b2a23] outline-none focus:border-[#800000] focus:ring-1 focus:ring-[#800000]">
             <option>Stripe</option>
             <option>PayPal Braintree</option>
             <option>Adyen</option>
           </select>
         </div>
-        <div className="flex flex-col gap-2">
-          <label className="text-[12px] font-bold text-[#8b6f5a] uppercase tracking-widest">Store Currency</label>
-          <select 
-            value={config.currency} onChange={(e) => handleChange('currency', e.target.value)}
-            className="w-full bg-white border border-[#d6c9b8] rounded-xl px-4 py-3 text-[14px] font-medium text-[#3b2a23] outline-none focus:border-[#800000] focus:ring-1 focus:ring-[#800000]"
-          >
-            <option>GBP (£)</option>
-            <option>USD ($)</option>
-            <option>EUR (€)</option>
-          </select>
-        </div>
-        <div className="flex flex-col gap-2 md:col-span-2">
-          <label className="text-[12px] font-bold text-[#8b6f5a] uppercase tracking-widest flex items-center gap-1.5"><Percent size={14}/> Processing Fee</label>
-          <input 
-            type="number" step="0.01" value={config.processingFee} onChange={(e) => handleChange('processingFee', e.target.value)}
-            className="w-full bg-white border border-[#d6c9b8] rounded-xl px-4 py-3 text-[14px] font-mono font-bold text-[#3b2a23] outline-none focus:border-[#800000] focus:ring-1 focus:ring-[#800000]"
-          />
-        </div>
+        {/* ... Currency and Fee inputs ... */}
       </div>
 
-      <div className="p-6 bg-[#faf6f0] border border-[#d6c9b8] rounded-xl flex flex-col gap-5 shadow-sm">
-        <h4 className="text-[13px] font-bold text-[#3b2a23] uppercase tracking-widest flex items-center gap-2"><Key size={16} className="text-[#800000]" /> API Credentials</h4>
+      {/* Sensitive Credentials (Locked by Default) */}
+      <div className={`p-6 bg-[#faf6f0] border border-[#d6c9b8] rounded-xl flex flex-col gap-5 shadow-sm transition-all ${isUnlocked ? 'opacity-100' : 'opacity-70'}`}>
+        <div className="flex items-center justify-between">
+          <h4 className="text-[13px] font-bold text-[#3b2a23] uppercase tracking-widest flex items-center gap-2">
+            <Key size={16} className="text-[#800000]" /> API Credentials
+          </h4>
+          {!isUnlocked && (
+<button 
+  type="button" 
+  onClick={requestVerification} // Use the new specialized function
+  className="text-[11px] font-bold text-[#800000] hover:underline"
+>
+  Unlock to Edit
+</button>
+          )}
+        </div>
         
         <div className="flex flex-col gap-2">
           <label className="text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Publishable Key</label>
           <input 
-            type="text" value={config.publicKey} onChange={(e) => handleChange('publicKey', e.target.value)}
-            className="w-full bg-white border border-[#d6c9b8] rounded-lg px-4 py-2.5 text-[13px] font-mono text-[#3b2a23] outline-none focus:border-[#800000] focus:ring-1"
+            type="text" 
+            disabled={!isUnlocked}
+            value={config.publicKey} 
+            onChange={(e) => handleChange('publicKey', e.target.value)}
+            className="w-full bg-white border border-[#d6c9b8] rounded-lg px-4 py-2.5 text-[13px] font-mono text-[#3b2a23] outline-none disabled:bg-[#f5f5f5] disabled:cursor-not-allowed focus:border-[#800000] focus:ring-1"
           />
         </div>
         <div className="flex flex-col gap-2">
           <label className="text-[11px] font-bold text-[#8b6f5a] uppercase tracking-widest">Secret Key</label>
           <input 
-            type="password" value={config.secretKey} onChange={(e) => handleChange('secretKey', e.target.value)}
-            className="w-full bg-white border border-[#d6c9b8] rounded-lg px-4 py-2.5 text-[13px] font-mono text-[#3b2a23] outline-none focus:border-[#800000] focus:ring-1"
+            type="password" 
+            disabled={!isUnlocked}
+            value={config.secretKey} 
+            onChange={(e) => handleChange('secretKey', e.target.value)}
+            className="w-full bg-white border border-[#d6c9b8] rounded-lg px-4 py-2.5 text-[13px] font-mono text-[#3b2a23] outline-none disabled:bg-[#f5f5f5] disabled:cursor-not-allowed focus:border-[#800000] focus:ring-1"
           />
         </div>
       </div>
     </div>
   );
+};
 
   const renderSecuritySettings = () => (
     <div className="animate-in fade-in flex flex-col gap-8">
@@ -443,13 +453,27 @@ const GlobalSettings = () => {
             <h1 className="text-2xl font-bold text-[#3b2a23] tracking-tight">{t('globalSettingsTitle')}</h1>
             <p className="text-[14px] text-[#8b6f5a] font-medium mt-1">{t('globalSettingsSubtitle')}</p>
           </div>
-          <button 
-            onClick={handleSave} disabled={isSaving}
-            className="flex items-center justify-center gap-2 bg-[#800000] hover:bg-[#660000] text-white px-6 py-2.5 rounded-lg shadow-md text-[14px] font-bold transition-all disabled:opacity-70 w-full md:w-auto"
-          >
-            {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            {isSaving ? 'Saving...' : t('saveConfiguration')}
-          </button>
+<button 
+  onClick={() => {
+    if (activeTab === 'payments' && !isUnlocked) {
+      requestVerification(); // Step 1: Start the security handshake
+    } else {
+      finalizeSave(); // Step 2: Push changes to the DB
+    }
+  }}
+  disabled={isSaving}
+  className="flex items-center justify-center gap-2 bg-[#800000] hover:bg-[#660000] text-white px-6 py-2.5 rounded-lg shadow-md text-[14px] font-bold transition-all disabled:opacity-70 w-full md:w-auto"
+>
+  {isSaving ? (
+    <Loader2 size={16} className="animate-spin" />
+  ) : (
+    <Save size={16} />
+  )}
+  {isSaving 
+    ? 'Saving...' 
+    : (activeTab === 'payments' && !isUnlocked ? 'Unlock to Edit' : t('saveConfiguration'))
+  }
+</button>
         </div>
       </div>
 
@@ -505,6 +529,30 @@ const GlobalSettings = () => {
           <p className="text-[14px] font-bold">{toast.msg}</p>
         </div>
       )}
+
+      {/* Verification Modal */}
+{showVerification && (
+  <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-[#3b2a23]/60 backdrop-blur-sm">
+    <div className="bg-white p-8 rounded-2xl w-full max-w-sm shadow-2xl border border-[#d6c9b8] animate-in fade-in zoom-in">
+      <h3 className="text-[18px] font-bold text-[#3b2a23] mb-2">Verify Identity</h3>
+      <p className="text-[13px] text-[#8b6f5a] mb-6">Enter the 6-digit security code sent to your admin email to authorize these changes.</p>
+      
+      <input 
+        type="text"
+        maxLength={6}
+        placeholder="000000"
+        value={verificationCode}
+        onChange={(e) => setVerificationCode(e.target.value)}
+        className="w-full text-center text-3xl tracking-[0.5em] py-4 bg-[#faf6f0] border-2 border-[#d6c9b8] rounded-xl mb-6 outline-none focus:border-[#800000]"
+      />
+      
+      <div className="flex gap-3">
+        <button onClick={() => setShowVerification(false)} className="flex-1 py-3 text-[14px] font-bold text-[#8b6f5a]">Cancel</button>
+        <button onClick={finalizeSave} className="flex-1 bg-[#800000] text-white py-3 rounded-xl font-bold text-[14px]">Verify & Save</button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 };
