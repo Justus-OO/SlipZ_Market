@@ -34,7 +34,8 @@ export const DepositService = {
               description: 'Workspace Balance Deposit',
               amount: amountAdded,
               status: 'COMPLETED',
-              workspaceId: workspaceId,
+              workspace: { connect: { id: workspaceId } },
+              user: { connect: { id: userId } },
               // Assuming your schema allows invoices without line items for simple deposits.
               // If it strictly requires items, you can create a dummy "Deposit" package/item.
             }

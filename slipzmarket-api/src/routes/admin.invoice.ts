@@ -22,7 +22,7 @@ router.get('/', requireAuth, requireAdmin, CoreService.catchAsync(async (req: Re
 
 // 2. Create/Update (Upsert) Invoice
 router.post('/upsert', requireAuth, requireAdmin, CoreService.catchAsync(async (req: Request, res: Response) => {
-  const { id, description, amount, status, date, workspaceId, items } = req.body;
+  const { id, description, amount, status, date, workspaceId, userId, items } = req.body;
 
   // Use a transaction to ensure atomic creation/update
   const invoice = await prisma.$transaction(async (tx) => {
@@ -30,13 +30,14 @@ router.post('/upsert', requireAuth, requireAdmin, CoreService.catchAsync(async (
       where: { id },
       update: { description, amount: parseFloat(amount), status, date: new Date(date) },
       create: {
-        id, 
+        id,
         description,
         amount: parseFloat(amount),
         status,
         date: new Date(date),
-        workspaceId,
-        items: { create: items } 
+        workspace: { connect: { id: workspaceId } },
+        user: { connect: { id: userId } },
+        items: { create: items }
       }
     });
     return inv;
