@@ -250,8 +250,8 @@ model GlobalSettings {
   gateway       String  @default("Stripe")
   currency      String  @default("USD ($)")
   processingFee Decimal @default(0.10) @db.Decimal(10, 2)
-publicKey     String  @default(env("STRIPE_PUBLIC_KEY"))
-  secretKey     String  @default(env("STRIPE_SECRET_KEY"))
+  publicKey     String  @default("")
+  secretKey     String  @default("")
   // Localization & UI
   defaultLanguage  String   @default("en-US")
   enabledLanguages String[] @default(["en-US", "en-GB", "es-ES", "fr-FR"]) // 👈 NEW
