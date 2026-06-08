@@ -19,15 +19,21 @@ export const ReportService = {
 
       // 2. Launch Puppeteer with Production-Ready arguments
       // --no-sandbox is essential for many Linux-based cloud environments (Render, Heroku, Docker)
-      browser = await puppeteer.launch({ 
+      const launchOptions: any = {
         headless: true,
         args: [
           '--no-sandbox', 
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage', // Prevents crashes in low-memory environments
           '--no-zygote'
-        ] 
-      });
+        ]
+      };
+
+      if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+      }
+
+      browser = await puppeteer.launch(launchOptions);
 
       const page = await browser.newPage();
 

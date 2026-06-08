@@ -21,6 +21,7 @@ RUN npm run build
 FROM node:20-slim AS backend-build
 WORKDIR /app/api
 
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 COPY slipzmarket-api/package*.json ./
 RUN npm ci
 
@@ -39,7 +40,8 @@ RUN npm prune --production
 # Stage 3: Final Production Image
 # ==========================================
 FROM node:20-slim
-RUN apt-get update && apt-get install -y nginx && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y nginx chromium && rm -rf /var/lib/apt/lists/*
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /app
 
